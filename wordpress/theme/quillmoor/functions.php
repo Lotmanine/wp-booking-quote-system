@@ -30,13 +30,13 @@ add_filter(
 	}
 );
 
-// Preload the body font, so the first paint uses Outfit instead of swapping.
+// Preload the body font, so the first paint uses Plus Jakarta Sans instead of swapping.
 add_action(
 	'wp_head',
 	static function (): void {
 		printf(
 			'<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n",
-			esc_url( get_theme_file_uri( 'assets/fonts/outfit-latin-var.woff2' ) )
+			esc_url( get_theme_file_uri( 'assets/fonts/plus-jakarta-sans-latin-var.woff2' ) )
 		);
 	},
 	1
@@ -60,51 +60,16 @@ add_filter(
 add_filter(
 	'login_headertext',
 	static function (): string {
-		return 'Quillmoor Home Services';
+		return 'quillmoor';
 	}
 );
 
 /**
- * Font faces for screens outside the block theme, such as the login page and wp-admin.
+ * Font face for screens outside the block theme, such as the login page and wp-admin.
  */
 function quillmoor_font_faces(): string {
-	$faces = array(
-		'Outfit'         => array( 'outfit-latin-var.woff2', '400 700' ),
-		'JetBrains Mono' => array( 'jetbrains-mono-latin-var.woff2', '400 500' ),
+	return sprintf(
+		"@font-face{font-family:'Plus Jakarta Sans';src:url('%s') format('woff2');font-weight:200 800;font-style:normal;font-display:swap}",
+		esc_url( get_theme_file_uri( 'assets/fonts/plus-jakarta-sans-latin-var.woff2' ) )
 	);
-	$css   = '';
-	foreach ( $faces as $family => $face ) {
-		$css .= sprintf(
-			"@font-face{font-family:'%s';src:url('%s') format('woff2');font-weight:%s;font-style:normal;font-display:swap}",
-			$family,
-			esc_url( get_theme_file_uri( 'assets/fonts/' . $face[0] ) ),
-			$face[1]
-		);
-	}
-	return $css;
-}
-
-/**
- * Main menu links, with the current page marked.
- *
- * @return array<int,array{label:string,url:string,active:bool}>
- */
-function quillmoor_menu_links(): array {
-	$path  = (string) wp_parse_url( (string) ( $_SERVER['REQUEST_URI'] ?? '/' ), PHP_URL_PATH ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only compared, never printed.
-	$links = array(
-		array( __( 'Services', 'quillmoor' ), '/services/', array( '/services/', '/book/' ) ),
-		array( __( 'How it works', 'quillmoor' ), '/#how-it-works', array() ),
-		array( __( 'Your bookings', 'quillmoor' ), '/portal/', array( '/portal/' ) ),
-		array( __( 'Staff', 'quillmoor' ), '/staff/', array( '/staff/' ) ),
-		array( __( 'Demo logins', 'quillmoor' ), '/demo/', array( '/demo/' ) ),
-	);
-	$out   = array();
-	foreach ( $links as $link ) {
-		$out[] = array(
-			'label'  => $link[0],
-			'url'    => home_url( $link[1] ),
-			'active' => in_array( trailingslashit( $path ), $link[2], true ),
-		);
-	}
-	return $out;
 }

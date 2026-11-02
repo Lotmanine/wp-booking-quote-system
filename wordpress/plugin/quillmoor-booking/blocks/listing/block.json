@@ -1,0 +1,24 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/listing",
+	"title": "Listing page",
+	"description": "Gallery, details, map, host and the booking card.",
+	"category": "widgets",
+	"textdomain": "quillmoor-booking",
+	"attributes": {},
+	"supports": {
+		"html": false,
+		"multiple": false
+	},
+	"style": [
+		"leaflet",
+		"qhs-app"
+	],
+	"render": "file:./render.php",
+	"viewScript": [
+		"leaflet",
+		"qhs-api",
+		"file:./view.js"
+	]
+}

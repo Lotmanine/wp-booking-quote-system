@@ -1,0 +1,16 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/credits",
+	"title": "Photo credits",
+	"description": "Every demo photo with its photographer, source and licence.",
+	"category": "widgets",
+	"textdomain": "quillmoor-booking",
+	"attributes": {},
+	"supports": {
+		"html": false,
+		"multiple": true
+	},
+	"style": "qhs-app",
+	"render": "file:./render.php"
+}

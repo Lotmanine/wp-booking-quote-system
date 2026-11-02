@@ -1,0 +1,25 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/search",
+	"title": "Search bar",
+	"description": "Where, when and who, for stays or tables.",
+	"category": "widgets",
+	"textdomain": "quillmoor-booking",
+	"attributes": {
+		"compact": {
+			"type": "boolean",
+			"default": false
+		}
+	},
+	"supports": {
+		"html": false,
+		"multiple": true
+	},
+	"style": "qhs-app",
+	"render": "file:./render.php",
+	"viewScript": [
+		"qhs-api",
+		"file:./view.js"
+	]
+}

@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/trips",
+	"title": "Trips",
+	"description": "The guest's stays, tables and payments.",
+	"category": "widgets",
+	"textdomain": "quillmoor-booking",
+	"attributes": {},
+	"supports": {
+		"html": false,
+		"multiple": true
+	},
+	"style": "qhs-app",
+	"render": "file:./render.php",
+	"viewScript": [
+		"qhs-api",
+		"file:./view.js"
+	]
+}

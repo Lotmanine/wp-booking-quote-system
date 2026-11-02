@@ -5,23 +5,52 @@
 		"appearanceTools": true,
 		"layout": {
 			"contentSize": "760px",
-			"wideSize": "1152px"
+			"wideSize": "1280px"
 		},
 		"color": {
 			"defaultPalette": false,
 			"defaultGradients": false,
 			"palette": [
-				{ "slug": "canvas", "name": "Canvas", "color": "#ffffff" },
-				{ "slug": "canvas-alt", "name": "Canvas alt", "color": "#f8fafc" },
-				{ "slug": "ink", "name": "Ink", "color": "#0f172a" },
-				{ "slug": "muted", "name": "Muted", "color": "#475569" },
-				{ "slug": "subtle", "name": "Subtle", "color": "#64748b" },
-				{ "slug": "line", "name": "Line", "color": "#e2e8f0" },
-				{ "slug": "line-strong", "name": "Line strong", "color": "#cbd5e1" },
-				{ "slug": "accent", "name": "Accent", "color": "#047857" },
-				{ "slug": "accent-hover", "name": "Accent hover", "color": "#065f46" },
-				{ "slug": "mark", "name": "Mark", "color": "#059669" },
-				{ "slug": "accent-soft", "name": "Accent soft", "color": "#ecfdf5" }
+				{
+					"slug": "canvas",
+					"name": "Canvas",
+					"color": "#ffffff"
+				},
+				{
+					"slug": "soft",
+					"name": "Soft",
+					"color": "#f6f5f2"
+				},
+				{
+					"slug": "ink",
+					"name": "Ink",
+					"color": "#222428"
+				},
+				{
+					"slug": "muted",
+					"name": "Muted",
+					"color": "#5f6670"
+				},
+				{
+					"slug": "line",
+					"name": "Line",
+					"color": "#e3e1dc"
+				},
+				{
+					"slug": "accent",
+					"name": "Moss",
+					"color": "#11695b"
+				},
+				{
+					"slug": "accent-hover",
+					"name": "Moss deep",
+					"color": "#0b4f44"
+				},
+				{
+					"slug": "accent-soft",
+					"name": "Moss soft",
+					"color": "#e6f1ee"
+				}
 			]
 		},
 		"typography": {
@@ -29,42 +58,51 @@
 			"fontFamilies": [
 				{
 					"slug": "body",
-					"name": "Outfit",
-					"fontFamily": "Outfit, ui-sans-serif, system-ui, sans-serif",
+					"name": "Plus Jakarta Sans",
+					"fontFamily": "'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif",
 					"fontFace": [
 						{
-							"fontFamily": "Outfit",
+							"fontFamily": "Plus Jakarta Sans",
 							"fontStyle": "normal",
-							"fontWeight": "400 700",
+							"fontWeight": "200 800",
 							"fontDisplay": "swap",
-							"src": [ "file:./assets/fonts/outfit-latin-var.woff2" ]
-						}
-					]
-				},
-				{
-					"slug": "mono",
-					"name": "JetBrains Mono",
-					"fontFamily": "'JetBrains Mono', ui-monospace, monospace",
-					"fontFace": [
-						{
-							"fontFamily": "JetBrains Mono",
-							"fontStyle": "normal",
-							"fontWeight": "400 500",
-							"fontDisplay": "swap",
-							"src": [ "file:./assets/fonts/jetbrains-mono-latin-var.woff2" ]
+							"src": [
+								"file:./assets/fonts/plus-jakarta-sans-latin-var.woff2"
+							]
 						}
 					]
 				}
 			],
 			"fontSizes": [
-				{ "slug": "small", "name": "Small", "size": "0.875rem" },
-				{ "slug": "medium", "name": "Medium", "size": "1.0625rem" },
-				{ "slug": "large", "name": "Large", "size": "1.25rem" },
-				{ "slug": "x-large", "name": "Extra large", "size": "2.25rem" }
+				{
+					"slug": "small",
+					"name": "Small",
+					"size": "0.875rem"
+				},
+				{
+					"slug": "medium",
+					"name": "Medium",
+					"size": "1.0625rem"
+				},
+				{
+					"slug": "large",
+					"name": "Large",
+					"size": "1.25rem"
+				},
+				{
+					"slug": "x-large",
+					"name": "Extra large",
+					"size": "2.25rem"
+				}
 			]
 		},
 		"spacing": {
-			"units": [ "px", "rem", "%", "vw" ]
+			"units": [
+				"px",
+				"rem",
+				"%",
+				"vw"
+			]
 		}
 	},
 	"styles": {
@@ -75,7 +113,7 @@
 		"typography": {
 			"fontFamily": "var(--wp--preset--font-family--body)",
 			"fontSize": "1rem",
-			"lineHeight": "1.65"
+			"lineHeight": "1.55"
 		},
 		"spacing": {
 			"blockGap": "1.25rem"
@@ -84,9 +122,9 @@
 			"heading": {
 				"typography": {
 					"fontFamily": "var(--wp--preset--font-family--body)",
-					"fontWeight": "600",
+					"fontWeight": "700",
 					"lineHeight": "1.15",
-					"letterSpacing": "-0.02em"
+					"letterSpacing": "-0.015em"
 				},
 				"color": {
 					"text": "var(--wp--preset--color--ink)"
@@ -94,7 +132,7 @@
 			},
 			"link": {
 				"color": {
-					"text": "var(--wp--preset--color--accent)"
+					"text": "var(--wp--preset--color--ink)"
 				}
 			},
 			"button": {
@@ -103,7 +141,7 @@
 					"text": "#ffffff"
 				},
 				"border": {
-					"radius": "12px"
+					"radius": "10px"
 				},
 				"typography": {
 					"fontWeight": "600"
@@ -121,7 +159,9 @@
 		{
 			"name": "page-app",
 			"title": "App page (no title)",
-			"postTypes": [ "page" ]
+			"postTypes": [
+				"page"
+			]
 		}
 	],
 	"templateParts": [

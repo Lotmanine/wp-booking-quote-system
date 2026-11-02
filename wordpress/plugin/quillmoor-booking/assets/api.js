@@ -1,4 +1,4 @@
-/* Shared helpers for the search bar, service pages, portal and staff agenda. */
+/* Shared helpers for the explore grid, the listing page and trips. Exposed as window.qhs. */
 ( function () {
 	const config = window.qhsConfig || {};
 	const nonceTag = document.querySelector( 'meta[name="qhs-nonce"]' );
@@ -28,10 +28,10 @@
 		return data;
 	}
 
-	/* Build DOM nodes from data, so customer text is always inserted as text. */
+	/* Build DOM nodes from data, so any text from the server is inserted as text. */
 	function el( tag, attrs = {}, ...children ) {
 		const node = document.createElement( tag );
-		Object.entries( attrs ).forEach( ( [ key, value ] ) => {
+		Object.entries( attrs || {} ).forEach( ( [ key, value ] ) => {
 			if ( key.startsWith( 'on' ) && typeof value === 'function' ) {
 				node.addEventListener( key.slice( 2 ).toLowerCase(), value );
 			} else if ( value === true ) {
@@ -48,361 +48,258 @@
 		return node;
 	}
 
-	const ICONS = {
-		cleaning: 'M7 21h10M9 21V9h6v12M10 9V5h4v4M14 5h3l1 2',
-		repairs: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.4-.4-2.6z',
-		garden: 'M12 21v-8M12 13c-4 0-6-3-6-7 4 0 6 3 6 7zM12 13c4 0 6-3 6-7-4 0-6 3-6 7z',
-		all: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
-		pin: 'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
-		calendar: 'M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM4 10h16M9 3v4M15 3v4',
-		home: 'M4 11l8-7 8 7v9H4zM10 20v-5h4v5',
-		clock: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 7.5V12l3 2',
-		check: 'M5 12.5l4.5 4.5L19 7.5',
-		user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
-		left: 'M15 6l-6 6 6 6',
-		right: 'M9 6l6 6-6 6',
-		close: 'M6 6l12 12M18 6L6 18',
-		file: 'M7 3h7l5 5v13H7zM14 3v5h5',
-		alert: 'M12 4l9 16H3zM12 10v4M12 17v.5',
-	};
+	const escape = ( text ) => String( text ).replace( /[&<>"']/g, ( c ) => ( { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ c ] ) );
 
-	function icon( name, size = 20 ) {
-		const ns = 'http://www.w3.org/2000/svg';
-		const svg = document.createElementNS( ns, 'svg' );
-		svg.setAttribute( 'class', 'qhs-icon' );
-		svg.setAttribute( 'width', size );
-		svg.setAttribute( 'height', size );
-		svg.setAttribute( 'viewBox', '0 0 24 24' );
-		svg.setAttribute( 'fill', 'none' );
-		svg.setAttribute( 'stroke', 'currentColor' );
-		svg.setAttribute( 'stroke-width', '1.8' );
-		svg.setAttribute( 'stroke-linecap', 'round' );
-		svg.setAttribute( 'stroke-linejoin', 'round' );
-		svg.setAttribute( 'aria-hidden', 'true' );
-		svg.setAttribute( 'focusable', 'false' );
-		const path = document.createElementNS( ns, 'path' );
-		path.setAttribute( 'd', ICONS[ name ] || '' );
-		svg.append( path );
-		return svg;
-	}
-
-	const money = ( cents ) => '$' + ( cents / 100 ).toFixed( 2 );
-	const moneyShort = ( cents ) => '$' + Math.round( cents / 100 );
-
-	/* Dates are handled in UTC, because every slot is stored and shown in UTC. */
+	/* Dates are handled in UTC, because every night and seating is stored and shown in UTC. */
 	const toDate = ( iso ) => new Date( iso + 'T00:00:00Z' );
-	const isoDay = ( date ) => date.toISOString().slice( 0, 10 );
-	const slotDate = ( slot ) => new Date( slot.replace( ' ', 'T' ) + 'Z' );
-
-	function formatSlot( slot ) {
-		return slotDate( slot ).toLocaleString( 'en-US', {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit',
-			timeZone: 'UTC',
-		} ) + ' UTC';
-	}
-
-	function formatTime( slot ) {
-		return slotDate( slot ).toLocaleTimeString( 'en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' } );
-	}
-
-	function formatDay( iso, long = false ) {
-		return toDate( iso ).toLocaleDateString( 'en-US', {
-			weekday: long ? 'long' : 'short',
-			month: long ? 'long' : 'short',
-			day: 'numeric',
-			timeZone: 'UTC',
-		} );
-	}
-
-	/* Bookable window, mirrored from the server so the calendar greys out what the server refuses. */
-	function windowBounds() {
-		const now = Date.now();
-		return {
-			min: isoDay( new Date( now + ( config.leadHours || 12 ) * 3600000 ) ),
-			max: isoDay( new Date( now + ( config.daysAhead || 14 ) * DAY ) ),
-		};
-	}
-
-	const catalog = config.catalog || {};
-	const find = ( group, key ) => ( catalog[ group ] || [] ).find( ( item ) => item.key === key );
-
-	/* Client estimate. The server computes the real price when the quote is created. */
-	function estimate( service, size, area, extras ) {
-		const row = find( 'services', service );
-		if ( ! row ) {
-			return null;
-		}
-		const sizeRow = find( 'sizes', size ) || find( 'sizes', 'small' );
-		const areaRow = find( 'areas', area );
-		const base = Math.round( ( row.cents * ( sizeRow ? sizeRow.multiplier : 100 ) ) / 100 );
-		const lines = [ { label: `${ row.label }, ${ sizeRow ? sizeRow.label : '' }`, cents: base } ];
-		if ( areaRow && areaRow.cents > 0 ) {
-			lines.push( { label: `${ areaRow.label } travel`, cents: areaRow.cents } );
-		}
-		[ ...new Set( extras ) ].forEach( ( key ) => {
-			const extra = find( 'extras', key );
-			if ( extra ) {
-				lines.push( { label: extra.label, cents: extra.cents } );
-			}
-		} );
-		const total = lines.reduce( ( sum, line ) => sum + line.cents, 0 );
-		const deposit = Math.max( 2000, Math.round( ( total * 0.2 ) / 100 ) * 100 );
-		return { lines, total, deposit };
-	}
+	const iso = ( date ) => date.toISOString().slice( 0, 10 );
+	const addDays = ( day, n ) => iso( new Date( toDate( day ).getTime() + n * DAY ) );
+	const nightsBetween = ( a, b ) => Math.round( ( toDate( b ) - toDate( a ) ) / DAY );
+	const formatDay = ( day, opts = {} ) => toDate( day ).toLocaleDateString( 'en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', ...opts } );
+	const formatTime = ( slot ) => slot.slice( 11, 16 );
 
 	/*
-	 * Month calendar with a roving tab stop. Arrow keys move by day and week, PageUp and PageDown
-	 * by month, Home and End to the edges of the week. Enter or Space picks the focused day.
+	 * Month calendar. In range mode the first pick is the arrival and the second the departure;
+	 * a departure may land on a taken night because the guest leaves that morning.
+	 * Arrow keys move by day and week, PageUp and PageDown by month, Enter or Space picks.
 	 */
-	function calendar( { min, max, isOpen = () => true, selected = '', onSelect, label = 'Choose a date' } ) {
-		const root = el( 'div', { class: 'qhs-cal', 'data-testid': 'calendar' } );
-		let focusDay = selected || min;
-		let view = toDate( focusDay );
+	function calendar( { min, max, range = false, blocked = () => '', start = '', end = '', months = 2, onChange } ) {
+		const root = el( 'div', { class: 'qm-cal', 'data-testid': 'calendar' } );
+		let from = start;
+		let to = end;
+		let focus = start || min;
+		let view = toDate( focus );
 		view = new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth(), 1 ) );
 
-		const usable = ( iso ) => iso >= min && iso <= max && isOpen( iso );
-
-		function paint( moveFocus ) {
-			const year = view.getUTCFullYear();
-			const month = view.getUTCMonth();
-			const first = new Date( Date.UTC( year, month, 1 ) );
-			const lead = ( first.getUTCDay() + 6 ) % 7;
-			const days = new Date( Date.UTC( year, month + 1, 0 ) ).getUTCDate();
-			const title = first.toLocaleDateString( 'en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' } );
-			const prevMonth = isoDay( new Date( Date.UTC( year, month, 0 ) ) );
-			const nextMonth = isoDay( new Date( Date.UTC( year, month + 1, 1 ) ) );
-
-			const rows = [];
-			let cells = [];
-			for ( let i = 0; i < lead; i++ ) {
-				cells.push( el( 'td', { role: 'gridcell' } ) );
+		const status = ( day ) => {
+			if ( day < min || day > max ) {
+				return 'out';
 			}
-			for ( let day = 1; day <= days; day++ ) {
-				const iso = isoDay( new Date( Date.UTC( year, month, day ) ) );
-				const open = usable( iso );
+			return blocked( day ) || '';
+		};
+		const canPick = ( day ) => {
+			if ( ! range ) {
+				return status( day ) === '';
+			}
+			if ( from && ! to && day > from ) {
+				// Departure: every night from arrival to the day before must be free.
+				for ( let d = from; d < day; d = addDays( d, 1 ) ) {
+					if ( status( d ) !== '' ) {
+						return false;
+					}
+				}
+				return day <= max;
+			}
+			return status( day ) === '';
+		};
+
+		function pick( day ) {
+			if ( ! canPick( day ) ) {
+				return;
+			}
+			if ( ! range ) {
+				from = day;
+			} else if ( ! from || to || day <= from ) {
+				from = day;
+				to = '';
+			} else {
+				to = day;
+			}
+			focus = day;
+			paint( true );
+			onChange?.( { from, to } );
+		}
+
+		function month( first ) {
+			const year = first.getUTCFullYear();
+			const m = first.getUTCMonth();
+			const lead = ( first.getUTCDay() + 6 ) % 7;
+			const days = new Date( Date.UTC( year, m + 1, 0 ) ).getUTCDate();
+			const title = first.toLocaleDateString( 'en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' } );
+			const cells = [];
+			for ( let i = 0; i < lead; i++ ) {
+				cells.push( el( 'span', { class: 'qm-cal__pad', 'aria-hidden': 'true' } ) );
+			}
+			for ( let d = 1; d <= days; d++ ) {
+				const day = iso( new Date( Date.UTC( year, m, d ) ) );
+				const st = status( day );
+				const open = canPick( day );
+				const inRange = range && from && to && day > from && day < to;
+				const cls = [ 'qm-cal__day' ];
+				if ( ! open ) {
+					cls.push( 'is-off' );
+				}
+				if ( st && st !== 'out' ) {
+					cls.push( 'is-' + st );
+				}
+				if ( day === from || day === to ) {
+					cls.push( 'is-picked' );
+				}
+				if ( inRange ) {
+					cls.push( 'is-between' );
+				}
 				cells.push(
 					el(
-						'td',
-						{ role: 'gridcell' },
-						el(
-							'button',
-							{
-								type: 'button',
-								class: 'qhs-cal__day' + ( open ? ' is-open' : '' ) + ( iso === selected ? ' is-selected' : '' ),
-								'data-testid': 'cal-day',
-								'data-date': iso,
-								tabindex: iso === focusDay ? '0' : '-1',
-								'aria-pressed': iso === selected ? 'true' : 'false',
-								'aria-disabled': open ? null : 'true',
-								'aria-label': formatDay( iso, true ) + ( open ? '' : ', unavailable' ),
-								onClick: () => {
-									if ( usable( iso ) ) {
-										selected = iso;
-										focusDay = iso;
-										paint( true );
-										onSelect( iso );
-									}
-								},
-							},
-							String( day )
-						)
+						'button',
+						{
+							type: 'button',
+							class: cls.join( ' ' ),
+							'data-testid': 'cal-day',
+							'data-date': day,
+							tabindex: day === focus ? '0' : '-1',
+							'aria-pressed': day === from || day === to ? 'true' : 'false',
+							'aria-disabled': open ? null : 'true',
+							'aria-label': toDate( day ).toLocaleDateString( 'en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' } ) + ( open ? '' : ', not available' ),
+							onClick: () => pick( day ),
+						},
+						String( d )
 					)
 				);
-				if ( cells.length === 7 ) {
-					rows.push( el( 'tr', {}, cells ) );
-					cells = [];
-				}
 			}
-			if ( cells.length ) {
-				while ( cells.length < 7 ) {
-					cells.push( el( 'td', { role: 'gridcell' } ) );
-				}
-				rows.push( el( 'tr', {}, cells ) );
-			}
+			return el(
+				'div',
+				{ class: 'qm-cal__month' },
+				el( 'p', { class: 'qm-cal__title' }, title ),
+				el( 'div', { class: 'qm-cal__head', 'aria-hidden': 'true' }, [ 'M', 'T', 'W', 'T', 'F', 'S', 'S' ].map( ( n ) => el( 'span', {}, n ) ) ),
+				el( 'div', { class: 'qm-cal__grid' }, cells )
+			);
+		}
 
+		function paint( keepFocus ) {
+			const shown = [];
+			for ( let i = 0; i < months; i++ ) {
+				shown.push( month( new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth() + i, 1 ) ) ) );
+			}
+			const prevAllowed = iso( new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth(), 0 ) ) ) >= min;
+			const nextFirst = iso( new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth() + months, 1 ) ) );
 			root.replaceChildren(
 				el(
 					'div',
-					{ class: 'qhs-cal__head' },
-					el( 'button', { type: 'button', class: 'qhs-cal__nav', 'aria-label': 'Previous month', disabled: prevMonth < min, onClick: () => shift( -1 ) }, icon( 'left', 18 ) ),
-					el( 'p', { class: 'qhs-cal__title', 'aria-live': 'polite' }, title ),
-					el( 'button', { type: 'button', class: 'qhs-cal__nav', 'aria-label': 'Next month', disabled: nextMonth > max, onClick: () => shift( 1 ) }, icon( 'right', 18 ) )
+					{ class: 'qm-cal__nav' },
+					el( 'button', { type: 'button', class: 'qm-cal__arrow', 'aria-label': 'Previous month', disabled: ! prevAllowed, onClick: () => move( -1 ) }, '‹' ),
+					el( 'button', { type: 'button', class: 'qm-cal__arrow', 'aria-label': 'Next month', disabled: nextFirst > max, onClick: () => move( 1 ) }, '›' )
 				),
-				el(
-					'table',
-					{ class: 'qhs-cal__grid', role: 'grid', 'aria-label': `${ label }, ${ title }` },
-					el( 'thead', {}, el( 'tr', {}, [ 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su' ].map( ( d ) => el( 'th', { scope: 'col', abbr: d } , d ) ) ) ),
-					el( 'tbody', {}, rows )
-				)
+				el( 'div', { class: 'qm-cal__months' }, shown )
 			);
-			if ( moveFocus ) {
-				const target = root.querySelector( `[data-date="${ focusDay }"]` );
-				if ( target ) {
-					target.focus();
-				}
+			if ( keepFocus ) {
+				root.querySelector( `[data-date="${ focus }"]` )?.focus();
 			}
 		}
 
-		function shift( months ) {
-			view = new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth() + months, 1 ) );
-			const firstOpen = [ ...Array( 31 ).keys() ]
-				.map( ( i ) => isoDay( new Date( view.getTime() + i * DAY ) ) )
-				.find( ( iso ) => iso.slice( 0, 7 ) === isoDay( view ).slice( 0, 7 ) && usable( iso ) );
-			focusDay = firstOpen || isoDay( view );
+		function move( n ) {
+			view = new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth() + n, 1 ) );
 			paint( false );
 		}
 
 		root.addEventListener( 'keydown', ( event ) => {
-			const steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
-			let next = null;
-			const current = toDate( focusDay );
-			if ( steps[ event.key ] !== undefined ) {
-				next = new Date( current.getTime() + steps[ event.key ] * DAY );
-			} else if ( event.key === 'Home' ) {
-				next = new Date( current.getTime() - ( ( current.getUTCDay() + 6 ) % 7 ) * DAY );
-			} else if ( event.key === 'End' ) {
-				next = new Date( current.getTime() + ( 6 - ( ( current.getUTCDay() + 6 ) % 7 ) ) * DAY );
-			} else if ( event.key === 'PageUp' || event.key === 'PageDown' ) {
-				next = new Date( Date.UTC( current.getUTCFullYear(), current.getUTCMonth() + ( event.key === 'PageUp' ? -1 : 1 ), current.getUTCDate() ) );
-			}
-			if ( ! next || ! event.target.classList.contains( 'qhs-cal__day' ) ) {
+			const steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, PageUp: -30, PageDown: 30 };
+			if ( ! ( event.key in steps ) || ! event.target.dataset?.date ) {
 				return;
 			}
 			event.preventDefault();
-			const iso = isoDay( next );
-			if ( iso < min || iso > max ) {
-				return;
+			focus = addDays( event.target.dataset.date, steps[ event.key ] );
+			const first = new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth(), 1 ) );
+			const last = new Date( Date.UTC( view.getUTCFullYear(), view.getUTCMonth() + months, 0 ) );
+			if ( toDate( focus ) < first || toDate( focus ) > last ) {
+				const f = toDate( focus );
+				view = new Date( Date.UTC( f.getUTCFullYear(), f.getUTCMonth(), 1 ) );
 			}
-			focusDay = iso;
-			view = new Date( Date.UTC( next.getUTCFullYear(), next.getUTCMonth(), 1 ) );
 			paint( true );
 		} );
 
 		paint( false );
-		root.qhsRefresh = ( nextIsOpen, nextSelected ) => {
-			isOpen = nextIsOpen;
-			selected = nextSelected;
-			paint( false );
+		return {
+			node: root,
+			clear() {
+				from = '';
+				to = '';
+				paint( false );
+			},
+			refresh() {
+				paint( false );
+			},
 		};
-		return root;
 	}
 
-	/*
-	 * Turnstile widget. Tokens are single use, so fresh() resets the widget once a token was spent
-	 * and waits for the next one.
-	 */
-	function renderTurnstile( host ) {
-		const state = { token: '', spent: false, widget: null, failed: false };
-		const ready = new Promise( ( resolve ) => {
-			let tries = 0;
-			const start = () => {
-				// The host must be in the page before Turnstile renders into it.
-				if ( window.turnstile && config.turnstileKey && host.isConnected ) {
-					state.widget = window.turnstile.render( host, {
-						sitekey: config.turnstileKey,
-						callback: ( token ) => {
-							state.token = token;
-							state.spent = false;
-						},
-						'expired-callback': () => {
-							state.token = '';
-						},
-					} );
-					resolve();
-				} else if ( ++tries < 300 && config.turnstileKey ) {
-					setTimeout( start, 100 );
-				} else {
-					state.failed = true;
-					resolve();
-				}
-			};
-			start();
+	/* Photo arrows and dots on a card's scroll-snap strip. */
+	function cardPhotos( card ) {
+		const strip = card.querySelector( '[data-qm-photos]' );
+		const prev = card.querySelector( '[data-dir="-1"]' );
+		const next = card.querySelector( '[data-dir="1"]' );
+		const dots = [ ...card.querySelectorAll( '.qm-card__dots i' ) ];
+		const link = card.querySelector( 'a' );
+		strip?.addEventListener( 'click', () => {
+			if ( link ) {
+				window.location.href = link.href;
+			}
 		} );
-
-		state.fresh = async () => {
-			await ready;
-			if ( state.failed ) {
-				return '';
-			}
-			if ( state.spent ) {
-				state.token = '';
-				window.turnstile.reset( state.widget );
-			}
-			const started = Date.now();
-			while ( ! state.token && Date.now() - started < 60000 ) {
-				await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
-			}
-			state.spent = true;
-			return state.token;
+		if ( ! strip || ! next ) {
+			return;
+		}
+		const index = () => Math.round( strip.scrollLeft / strip.clientWidth );
+		const sync = () => {
+			const i = index();
+			prev.hidden = i <= 0;
+			next.hidden = i >= dots.length - 1;
+			dots.forEach( ( dot, n ) => dot.classList.toggle( 'is-on', n === i ) );
 		};
-		return state;
-	}
-
-	/* Modal dialog on the native element, which traps focus and closes on Escape. */
-	function dialog( { title, body, actions = [], testid = 'dialog' } ) {
-		const node = el(
-			'dialog',
-			{ class: 'qhs-dialog', 'aria-labelledby': 'qhs-dialog-title', 'data-testid': testid },
-			el(
-				'div',
-				{ class: 'qhs-dialog__head' },
-				el( 'h2', { id: 'qhs-dialog-title', class: 'qhs-dialog__title' }, title ),
-				el( 'button', { type: 'button', class: 'qhs-icon-btn', 'aria-label': 'Close', onClick: () => node.close() }, icon( 'close', 18 ) )
-			),
-			el( 'div', { class: 'qhs-dialog__body' }, body ),
-			actions.length
-				? el(
-					'div',
-					{ class: 'qhs-dialog__actions' },
-					actions.map( ( action ) =>
-						el(
-							'button',
-							{
-								type: 'button',
-								class: 'qhs-btn ' + ( action.primary ? 'qhs-btn--primary' : action.danger ? 'qhs-btn--danger' : 'qhs-btn--secondary' ),
-								'data-testid': action.testid || null,
-								onClick: () => action.onClick( node ),
-							},
-							action.label
-						)
-					)
-				)
-				: null
+		[ prev, next ].forEach( ( button ) =>
+			button.addEventListener( 'click', () => {
+				strip.scrollTo( { left: ( index() + Number( button.dataset.dir ) ) * strip.clientWidth, behavior: 'smooth' } );
+			} )
 		);
-		node.addEventListener( 'close', () => node.remove() );
-		document.body.append( node );
-		node.showModal();
-		return node;
+		strip.addEventListener( 'scroll', () => window.requestAnimationFrame( sync ), { passive: true } );
+		sync();
 	}
 
-	function params() {
-		return new URLSearchParams( window.location.search );
+	/* Leaflet map with OpenStreetMap tiles and their attribution. */
+	function baseMap( node, options = {} ) {
+		const map = window.L.map( node, { zoomControl: true, attributionControl: true, ...options } );
+		window.L.tileLayer( config.tiles, { maxZoom: 18, attribution: config.attribution } ).addTo( map );
+		return map;
 	}
 
-	window.qhs = {
-		api,
-		el,
-		icon,
-		money,
-		moneyShort,
-		formatSlot,
-		formatTime,
-		formatDay,
-		isoDay,
-		slotDate,
-		windowBounds,
-		estimate,
-		find,
-		calendar,
-		renderTurnstile,
-		dialog,
-		params,
-		catalog,
-		config,
-		nonce,
-	};
+	/* Countdown text for a hold, in minutes and seconds. */
+	function countdown( node, expiresAt, onDone ) {
+		const end = new Date( expiresAt.replace( ' ', 'T' ) + 'Z' ).getTime();
+		const tick = () => {
+			const left = Math.max( 0, end - Date.now() );
+			const m = Math.floor( left / 60000 );
+			const s = Math.floor( ( left % 60000 ) / 1000 );
+			node.textContent = `${ m }:${ String( s ).padStart( 2, '0' ) }`;
+			if ( left <= 0 ) {
+				window.clearInterval( timer );
+				onDone?.();
+			}
+		};
+		const timer = window.setInterval( tick, 1000 );
+		tick();
+		return () => window.clearInterval( timer );
+	}
+
+	/* Render the Turnstile widget when keys exist; resolve with a getter for the token. */
+	function turnstile( host ) {
+		if ( ! config.turnstileKey ) {
+			return () => '';
+		}
+		let token = '';
+		const box = el( 'div', { class: 'qm-turnstile' } );
+		host.append( box );
+		const render = () => {
+			window.turnstile.render( box, { sitekey: config.turnstileKey, callback: ( t ) => ( token = t ), 'expired-callback': () => ( token = '' ) } );
+		};
+		if ( window.turnstile ) {
+			render();
+		} else {
+			const wait = window.setInterval( () => {
+				if ( window.turnstile ) {
+					window.clearInterval( wait );
+					render();
+				}
+			}, 200 );
+		}
+		return () => token;
+	}
+
+	window.qhs = { config, nonce, api, el, escape, toDate, iso, addDays, nightsBetween, formatDay, formatTime, calendar, cardPhotos, baseMap, countdown, turnstile };
 }() );
