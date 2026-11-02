@@ -1,0 +1,158 @@
+# Production stack for Coolify. Local overrides live in docker-compose.local.yml.
+name: bookingdemo
+
+x-site-env: &site-env
+  WORDPRESS_DB_HOST: db:3306
+  WORDPRESS_DB_NAME: booking
+  WORDPRESS_DB_USER: booking
+  WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+  WORDPRESS_TABLE_PREFIX: qwp_
+  WORDPRESS_AUTH_KEY: ${WP_AUTH_KEY:?set WP_AUTH_KEY}
+  WORDPRESS_SECURE_AUTH_KEY: ${WP_SECURE_AUTH_KEY:?set WP_SECURE_AUTH_KEY}
+  WORDPRESS_LOGGED_IN_KEY: ${WP_LOGGED_IN_KEY:?set WP_LOGGED_IN_KEY}
+  WORDPRESS_NONCE_KEY: ${WP_NONCE_KEY:?set WP_NONCE_KEY}
+  WORDPRESS_AUTH_SALT: ${WP_AUTH_SALT:?set WP_AUTH_SALT}
+  WORDPRESS_SECURE_AUTH_SALT: ${WP_SECURE_AUTH_SALT:?set WP_SECURE_AUTH_SALT}
+  WORDPRESS_LOGGED_IN_SALT: ${WP_LOGGED_IN_SALT:?set WP_LOGGED_IN_SALT}
+  WORDPRESS_NONCE_SALT: ${WP_NONCE_SALT:?set WP_NONCE_SALT}
+  WORDPRESS_CONFIG_EXTRA: |
+    define( 'WP_HOME', getenv( 'WP_HOME' ) );
+    define( 'WP_SITEURL', getenv( 'WP_HOME' ) );
+    define( 'DISABLE_WP_CRON', true );
+    define( 'DISALLOW_FILE_EDIT', true );
+    define( 'DISALLOW_FILE_MODS', true );
+    define( 'WP_AUTO_UPDATE_CORE', false );
+    define( 'WP_ENVIRONMENT_TYPE', getenv( 'WP_ENVIRONMENT_TYPE' ) ?: 'production' );
+    if ( isset( $$_SERVER['HTTP_X_FORWARDED_PROTO'] ) && 'https' === $$_SERVER['HTTP_X_FORWARDED_PROTO'] ) { $$_SERVER['HTTPS'] = 'on'; }
+  WP_HOME: ${WP_HOME:?set WP_HOME}
+  WP_ENVIRONMENT_TYPE: ${WP_ENVIRONMENT_TYPE:-production}
+  WP_ADMIN_USER: ${WP_ADMIN_USER:-owner}
+  WP_ADMIN_EMAIL: ${WP_ADMIN_EMAIL:-owner@example.com}
+  WP_ADMIN_PASSWORD: ${WP_ADMIN_PASSWORD:?set WP_ADMIN_PASSWORD}
+  QHS_DEMO_SITE: ${QHS_DEMO_SITE:-1}
+  QHS_DEMO_HOST: ${QHS_DEMO_HOST:-booking.oldev.site}
+  QHS_DEMO_PASSWORD: ${QHS_DEMO_PASSWORD:?set QHS_DEMO_PASSWORD}
+  QHS_PAYMENT_MODE: ${QHS_PAYMENT_MODE:-stripe}
+  STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
+  STRIPE_TEST_PUBLISHABLE_KEY: ${STRIPE_TEST_PUBLISHABLE_KEY:-}
+  STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
+  TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+  TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+  BREVO_API_KEY: ${BREVO_API_KEY:-}
+  QHS_MAIL_FROM: ${QHS_MAIL_FROM:-lotfi@oldev.site}
+  QHS_MAIL_DAILY_CAP: ${QHS_MAIL_DAILY_CAP:-50}
+  QHS_MAIL_PER_ADDRESS_DAILY: ${QHS_MAIL_PER_ADDRESS_DAILY:-5}
+  QHS_DISPATCH_INTERNAL_URL: http://dispatch:8080
+  DISPATCH_API_KEY: ${DISPATCH_API_KEY:?set DISPATCH_API_KEY}
+  QHS_HMAC_SECRET_N8N: ${QHS_HMAC_SECRET_N8N:?set QHS_HMAC_SECRET_N8N}
+  QHS_HMAC_SECRET_DISPATCH: ${QHS_HMAC_SECRET_DISPATCH:?set QHS_HMAC_SECRET_DISPATCH}
+  QHS_N8N_EVENTS_URL: ${QHS_N8N_EVENTS_URL:-}
+  QHS_N8N_TRIAGE_URL: ${QHS_N8N_TRIAGE_URL:-}
+  QHS_TRUSTED_PROXIES: ${QHS_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+  QHS_LIMIT_QUOTE_PER_MIN: ${QHS_LIMIT_QUOTE_PER_MIN:-10}
+  QHS_LIMIT_HOLD_PER_MIN: ${QHS_LIMIT_HOLD_PER_MIN:-10}
+  QHS_TRIAGE_DAILY_CAP: ${QHS_TRIAGE_DAILY_CAP:-50}
+
+services:
+  wordpress:
+    build:
+      context: .
+      dockerfile: docker/wordpress/Dockerfile
+    restart: unless-stopped
+    environment: *site-env
+    volumes:
+      - wp_uploads:/var/www/html/wp-content/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 560m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost/wp-login.php || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # DISABLE_WP_CRON is on, so this drives Action Scheduler every minute.
+  wp-cron:
+    image: curlimages/curl:8.17.0
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "while true; do curl -fsS -o /dev/null http://wordpress/wp-cron.php?doing_wp_cron || true; sleep 60; done"]
+    depends_on:
+      - wordpress
+    mem_limit: 16m
+
+  dispatch:
+    build:
+      context: .
+      dockerfile: docker/dispatch/Dockerfile
+    restart: unless-stopped
+    environment: &dispatch-env
+      APP_NAME: dispatch
+      APP_ENV: ${DISPATCH_APP_ENV:-production}
+      APP_KEY: ${DISPATCH_APP_KEY:?set DISPATCH_APP_KEY}
+      APP_DEBUG: "false"
+      APP_URL: ${WP_HOME:?set WP_HOME}/dispatch
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: dispatch
+      DB_USERNAME: booking
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      QUEUE_CONNECTION: database
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      DISPATCH_API_KEY: ${DISPATCH_API_KEY:?set DISPATCH_API_KEY}
+      DISPATCH_ALLOW_RESET: ${QHS_DEMO_SITE:-1}
+      DISPATCH_WP_URL: http://wordpress
+      DISPATCH_HMAC_SECRET: ${QHS_HMAC_SECRET_DISPATCH:?set QHS_HMAC_SECRET_DISPATCH}
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 192m
+
+  dispatch-worker:
+    build:
+      context: .
+      dockerfile: docker/dispatch/Dockerfile
+    restart: unless-stopped
+    environment: *dispatch-env
+    user: "33:33"
+    entrypoint: ["sh", "-c", "php artisan migrate --force && php artisan db:seed --force && exec php artisan queue:work --tries=5 --backoff=10 --max-time=3600 --memory=80 --sleep=3"]
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+
+  db:
+    build:
+      context: .
+      dockerfile: docker/mariadb/Dockerfile
+    restart: unless-stopped
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=40
+      - --performance-schema=OFF
+      - --skip-log-bin
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MARIADB_DATABASE: booking
+      MARIADB_USER: booking
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    mem_limit: 420m
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  db_data:
+  wp_uploads:

@@ -1,0 +1,67 @@
+# Local overrides: published ports and a private n8n that runs the exported workflows.
+services:
+  wordpress:
+    ports:
+      - "18091:80"
+
+  wp-tests:
+    profiles: ["tests"]
+    build:
+      context: .
+      dockerfile: docker/wordpress/Dockerfile
+    entrypoint: ["bash"]
+    working_dir: /usr/src/wordpress/wp-content/plugins/quillmoor-booking
+    environment:
+      WP_TESTS_DB_NAME: wp_tests
+      WP_TESTS_DB_USER: booking
+      WP_TESTS_DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      WP_TESTS_DB_HOST: db
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+    volumes:
+      - ./wordpress/plugin/quillmoor-booking:/usr/src/wordpress/wp-content/plugins/quillmoor-booking
+    depends_on:
+      db:
+        condition: service_healthy
+
+  dispatch:
+    ports:
+      - "18092:8080"
+
+  db:
+    ports:
+      - "127.0.0.1:18094:3306"
+
+  n8n:
+    image: n8nio/n8n:2.45.7
+    restart: unless-stopped
+    ports:
+      - "18093:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://n8n:5678/
+      N8N_ENCRYPTION_KEY: ${N8N_LOCAL_ENCRYPTION_KEY:?set N8N_LOCAL_ENCRYPTION_KEY}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_RUNNERS_MODE: internal
+      NODE_ENV: production
+      GENERIC_TIMEZONE: UTC
+      TZ: UTC
+      QHS_N8N_HMAC_SECRET: ${QHS_HMAC_SECRET_N8N:?set QHS_HMAC_SECRET_N8N}
+      QHS_WP_URL: http://wordpress
+      QHS_DISPATCH_URL: http://dispatch:8080
+      QHS_DISPATCH_API_KEY: ${DISPATCH_API_KEY:?set DISPATCH_API_KEY}
+      QHS_TELEGRAM_CHAT_ID: ${QHS_TELEGRAM_CHAT_ID:-0}
+      QHS_AI_MODEL: ${QHS_AI_MODEL:-claude-haiku-5-5}
+      QHS_REMINDER_HOURS_AHEAD: ${QHS_REMINDER_HOURS_AHEAD:-24}
+      QHS_FOLLOWUP_HOURS_AFTER: ${QHS_FOLLOWUP_HOURS_AFTER:-0}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/import:ro
+    mem_limit: 512m
+
+volumes:
+  n8n_data:
