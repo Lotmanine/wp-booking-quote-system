@@ -205,7 +205,7 @@ cd tests/e2e && npm ci && npx playwright install chromium && npx playwright test
 
 | Check | Result |
 |---|---|
-| WordPress PHPUnit | 387 tests, 1485 assertions, passing on PHP 8.5 with WooCommerce, FluentCRM and Secure Custom Fields loaded |
+| WordPress PHPUnit | 389 tests, 1492 assertions, passing on PHP 8.5 with WooCommerce, FluentCRM and Secure Custom Fields loaded |
 | Laravel PHPUnit | 21 tests, 55 assertions, passing |
 | PHPCS (WordPress-Core and WordPress-Extra) | no errors or warnings in the plugin and the theme |
 | PHPStan level 6 | no errors |

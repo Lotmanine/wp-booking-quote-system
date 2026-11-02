@@ -73,8 +73,10 @@ final class BookingPolicy {
 	 * @param array<string,mixed> $booking Booking row.
 	 */
 	public function is_host( Actor $actor, array $booking ): bool {
+		// The listing's current owner decides, so a host loses access as soon as a listing is reassigned.
 		return $actor->user_id > 0
 			&& (int) $booking['host_user_id'] === $actor->user_id
+			&& (int) get_post_field( 'post_author', (int) $booking['listing_id'] ) === $actor->user_id
 			&& user_can( $actor->user_id, self::CAP_HOST );
 	}
 

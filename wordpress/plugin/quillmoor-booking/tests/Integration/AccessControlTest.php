@@ -50,6 +50,36 @@ class AccessControlTest extends TestCase {
 		$this->assertSame( 'Linked Person', $list['name'] );
 	}
 
+	public function test_a_signed_in_guest_cannot_claim_another_address_by_typing_it(): void {
+		$listing = $this->stay_listing();
+		$victim  = $this->held_stay( $listing, $this->day( 10 ), $this->day( 12 ), 'victim@example.com' );
+		$user    = (int) self::factory()->user->create(
+			array(
+				'role'       => Roles::CUSTOMER,
+				'user_email' => 'attacker@example.com',
+			)
+		);
+
+		wp_set_current_user( $user );
+		$response = $this->rest(
+			'POST',
+			'/quote',
+			array(
+				'listing_id'      => $listing,
+				'check_in'        => $this->day( 20 ),
+				'check_out'       => $this->day( 22 ),
+				'guests'          => 2,
+				'email'           => 'victim@example.com',
+				'full_name'       => 'Attacker',
+				'turnstile_token' => 'token',
+			)
+		);
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 404, $this->show( $victim ) );
+		$this->assertSame( 'attacker@example.com', Services::bookings()->customer_by_user( $user )['email'] );
+	}
+
 	public function test_the_trip_list_needs_a_sign_in(): void {
 		$this->assertSame( 401, $this->rest( 'GET', '/bookings' )->get_status() );
 		$this->assertSame( 401, $this->rest( 'POST', '/consent', array( 'marketing_consent' => true ) )->get_status() );
@@ -203,6 +233,26 @@ class AccessControlTest extends TestCase {
 		$this->assertTrue( Services::policy()->can_manage( new Actor( $this->user( Roles::MANAGER ) ), $row ) );
 		$this->assertSame( 'guest', $guest->label() );
 		$this->assertSame( 'user:' . $host, ( new Actor( $host ) )->label() );
+	}
+
+	public function test_a_host_loses_access_when_the_listing_is_reassigned(): void {
+		$old     = $this->make_host();
+		$new     = $this->make_host();
+		$listing = $this->stay_listing( array(), $old );
+		$id      = $this->paid_stay( $listing, $this->day( 10 ), $this->day( 12 ) );
+
+		wp_update_post(
+			array(
+				'ID'          => $listing,
+				'post_author' => $new,
+			)
+		);
+
+		wp_set_current_user( $old );
+		$this->assertSame( 404, $this->show( $id ) );
+		wp_set_current_user( $new );
+		$this->assertSame( 200, $this->show( $id ) );
+		$this->assertSame( $new, (int) $this->booking( $id )['host_user_id'] );
 	}
 
 	public function test_a_host_who_lost_the_role_loses_access(): void {

@@ -149,6 +149,9 @@ final class PublicApi {
 		if ( null !== $own ) {
 			$email = (string) $own['email'];
 			$name  = (string) $own['full_name'];
+		} elseif ( $user > 0 ) {
+			// No record yet: use the account's own address, so a typed address never links someone else's bookings.
+			$email = strtolower( (string) wp_get_current_user()->user_email );
 		}
 
 		if ( ! is_email( $email ) || '' === $name || strlen( $name ) > 120 ) {

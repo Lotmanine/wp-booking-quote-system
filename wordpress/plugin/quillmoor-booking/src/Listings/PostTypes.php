@@ -7,7 +7,9 @@
 
 namespace Quillmoor\Booking\Listings;
 
+use Quillmoor\Booking\Db;
 use Quillmoor\Booking\Security\BookingPolicy;
+use WP_Post;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -48,6 +50,23 @@ final class PostTypes {
 	 */
 	public static function register(): void {
 		add_action( 'init', array( self::class, 'register_types' ), 5 );
+		add_action( 'post_updated', array( self::class, 'follow_owner' ), 10, 3 );
+	}
+
+	/**
+	 * When a listing changes owner, its bookings move to the new host.
+	 *
+	 * @param int     $post_id Post id.
+	 * @param WP_Post $after   Post after the update.
+	 * @param WP_Post $before  Post before the update.
+	 */
+	public static function follow_owner( int $post_id, WP_Post $after, WP_Post $before ): void {
+		if ( self::LISTING !== $after->post_type || (int) $after->post_author === (int) $before->post_author ) {
+			return;
+		}
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Plugin table, nothing to cache.
+		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET host_user_id = %d WHERE listing_id = %d', Db::table( 'bookings' ), (int) $after->post_author, $post_id ) );
 	}
 
 	/**
