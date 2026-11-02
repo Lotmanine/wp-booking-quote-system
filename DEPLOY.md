@@ -110,7 +110,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 Then run one test payment:
 
-1. Sign in on `/demo/` as `demo-customer`, get a quote and hold a slot.
+1. Sign in on `/demo/` as `demo-customer`, open a service from `/services/`, pick a district, a day and a time on the reservation card, and hold the slot.
 2. Pay with Stripe's test card `4242 4242 4242 4242`, any future expiry, any CVC.
 3. Refresh the portal. Within about two minutes the booking should reach **Staff assigned**.
 4. Sign in as `demo-admin` and open Bookings, Reports. "Events waiting for n8n" should be 0.

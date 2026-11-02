@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { sql } from '../global-setup.js';
-import { BANNER, bookingIdFrom, login, payDeposit, runWizard } from './helpers.js';
+import { BANNER, bookingIdFrom, login, payDeposit, runBooking } from './helpers.js';
 
 const SHOTS = process.env.SCREENSHOTS ? '../../docs/screenshots' : null;
 
@@ -15,10 +15,10 @@ async function shot( page, testInfo, name ) {
 test( 'quote to deposit, confirmation, assignment and completion', async ( { browser, page }, testInfo ) => {
 	const note = 'Smoke alarm keeps beeping and there is a small water leak under the sink.';
 
-	await test.step( 'customer gets a quote, holds a slot and pays the test deposit', async () => {
+	await test.step( 'customer searches, opens a service, holds a slot and pays the test deposit', async () => {
 		await login( page, 'demo-customer' );
 		await expect( page ).toHaveURL( /\/portal\// );
-		await runWizard( page, { note, slotIndex: 4 } );
+		await runBooking( page, { note, slotIndex: 4, fromSearch: true } );
 		await shot( page, testInfo, 'hold' );
 		await payDeposit( page );
 		await shot( page, testInfo, 'paid' );
@@ -34,6 +34,11 @@ test( 'quote to deposit, confirmation, assignment and completion', async ( { bro
 		} ).toPass( { timeout: 180000, intervals: [ 5000 ] } );
 		await expect( page.getByTestId( 'booking-staff' ) ).toHaveText( 'Rowan Vale' );
 		await shot( page, testInfo, 'assigned' );
+		await page.goto( '/portal/' );
+		await expect( page.getByTestId( 'tab-upcoming' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		await expect( page.locator( `[data-testid="booking-card"][data-booking="${ bookingId }"]` ) ).toBeVisible();
+		await shot( page, testInfo, 'portal' );
+		await page.goto( `/portal/?booking=${ bookingId }` );
 	} );
 
 	await test.step( 'the confirmation PDF downloads', async () => {
@@ -77,6 +82,11 @@ test( 'quote to deposit, confirmation, assignment and completion', async ( { bro
 		await expect( adminPage.getByText( BANNER ) ).toBeVisible();
 		await expect( adminPage.locator( '.wrap' ) ).toContainText( `QHS-${ bookingId }` );
 		await shot( adminPage, testInfo, 'admin-calendar' );
+		await adminPage.goto( `/wp-admin/admin.php?page=qhs-bookings&s=QHS-${ bookingId }` );
+		await expect( adminPage.locator( '.qhs-admin__table' ) ).toContainText( `QHS-${ bookingId }` );
+		await expect( adminPage.locator( '.qhs-admin__table tbody tr' ) ).toHaveCount( 1 );
+		await adminPage.goto( '/wp-admin/admin.php?page=qhs-bookings' );
+		await shot( adminPage, testInfo, 'admin-bookings' );
 		await adminPage.goto( '/wp-admin/admin.php?page=qhs-reports' );
 		await expect( adminPage.locator( '.wrap' ) ).toContainText( 'Completed' );
 		await shot( adminPage, testInfo, 'admin-reports' );
@@ -91,29 +101,32 @@ test( 'quote to deposit, confirmation, assignment and completion', async ( { bro
 
 test( 'customer can reschedule and then cancel from the portal', async ( { page } ) => {
 	await login( page, 'demo-customer' );
-	await runWizard( page, { slotIndex: 10 } );
+	await runBooking( page, { slotIndex: 10 } );
 	await payDeposit( page );
 	const bookingId = bookingIdFrom( page.url() );
 	const before = await page.getByTestId( 'booking-slot' ).textContent();
 
 	await page.getByTestId( 'reschedule-open' ).click();
-	await page.getByTestId( 'reschedule-slot' ).nth( 12 ).click();
+	const dialog = page.getByTestId( 'reschedule-dialog' );
+	await expect( dialog ).toBeVisible();
+	await dialog.locator( '[data-testid="cal-day"].is-open' ).nth( 2 ).click();
+	await dialog.getByTestId( 'reschedule-slot' ).first().click();
 	await expect( page.getByTestId( 'portal-notice' ) ).toContainText( 'updated' );
 	await expect( page.getByTestId( 'booking-slot' ) ).not.toHaveText( before );
 
-	page.once( 'dialog', ( dialog ) => dialog.accept() );
 	await page.getByTestId( 'cancel' ).click();
+	await page.getByTestId( 'cancel-confirm' ).click();
 	await expect( page.getByTestId( 'booking-state' ) ).toHaveText( 'Cancelled' );
 	expect( sql( `SELECT COUNT(*) FROM qwp_qhs_slot_claims WHERE booking_id = ${ bookingId }` ) ).toBe( '0' );
 } );
 
 test( 'a guest gets a quote without an account', async ( { page }, testInfo ) => {
-	await runWizard( page, { slotIndex: 14, email: `guest-${ testInfo.project.name }@example.com` } );
+	await runBooking( page, { slotIndex: 14, email: `guest-${ testInfo.project.name }@example.com` } );
 	await expect( page.getByTestId( 'pay-link' ) ).toContainText( 'test deposit' );
 } );
 
 test( 'the banner shows on every page and nothing scrolls sideways', async ( { page } ) => {
-	for ( const path of [ '/', '/quote/', '/portal/', '/staff/', '/demo/', '/wp-login.php' ] ) {
+	for ( const path of [ '/', '/services/', '/book/?service=lawn', '/portal/', '/staff/', '/demo/', '/wp-login.php' ] ) {
 		await page.goto( path );
 		await expect( page.getByText( BANNER ), path ).toBeVisible();
 		const overflow = await page.evaluate( () => {
@@ -140,7 +153,7 @@ test( 'demo accounts stay inside their area', async ( { page } ) => {
 } );
 
 test( 'a customer cannot open another customer booking', async ( { browser, page }, testInfo ) => {
-	await runWizard( page, { slotIndex: 16, email: `owner-${ testInfo.project.name }@example.com` } );
+	await runBooking( page, { slotIndex: 16, email: `owner-${ testInfo.project.name }@example.com` } );
 	const bookingId = sql( "SELECT MAX(id) FROM qwp_qhs_bookings" );
 
 	const other = await browser.newContext( { ...testInfo.project.use, baseURL: testInfo.project.use.baseURL } );
@@ -149,4 +162,70 @@ test( 'a customer cannot open another customer booking', async ( { browser, page
 	await otherPage.goto( `/portal/?booking=${ bookingId }` );
 	await expect( otherPage.locator( '#qhs-portal' ) ).toContainText( 'Booking not found' );
 	await other.close();
+} );
+
+test( 'search, chips, filters and sorting narrow the service list', async ( { page }, testInfo ) => {
+	await page.goto( '/services/' );
+	await expect( page.getByText( BANNER ) ).toBeVisible();
+	const cards = page.locator( '.qhs-svc:visible' );
+	await expect( cards ).toHaveCount( 6 );
+	await shot( page, testInfo, 'services' );
+
+	await page.getByTestId( 'chip-garden' ).click();
+	await expect( cards ).toHaveCount( 2 );
+	await expect( page ).toHaveURL( /category=garden/ );
+	await page.getByTestId( 'sort' ).selectOption( 'price-asc' );
+	await expect( cards.first() ).toHaveAttribute( 'data-key', 'lawn' );
+
+	await page.getByTestId( 'chip-all' ).click();
+	await page.getByTestId( 'filters-toggle' ).click();
+	await page.getByTestId( 'filter-length-short' ).check();
+	await expect( cards ).toHaveCount( 3 );
+	await expect( page.locator( '.qhs-svc[data-key="deep-clean"]' ) ).toBeHidden();
+	await page.getByTestId( 'sort' ).selectOption( 'price-desc' );
+	await expect( cards.first() ).toHaveAttribute( 'data-key', 'handyman' );
+	await page.locator( '[data-qhs-filters] [data-qhs-clear]' ).click();
+	await expect( cards ).toHaveCount( 6 );
+} );
+
+test( 'the date panel and the reservation calendar work from the keyboard', async ( { page }, testInfo ) => {
+	await page.goto( '/' );
+	await shot( page, testInfo, 'home' );
+	await page.getByTestId( 'search-open-date' ).focus();
+	await page.keyboard.press( 'Enter' );
+	const panel = page.locator( '#qhs-pop-date' );
+	await expect( panel ).toBeVisible();
+	await page.keyboard.press( 'Escape' );
+	await expect( panel ).toHaveCount( 0 );
+	await expect( page.getByTestId( 'search-open-date' ) ).toBeFocused();
+
+	await page.goto( '/book/?service=handyman&area=central' );
+	const first = page.locator( '[data-qhs-reserve] [data-testid="cal-day"].is-open' ).first();
+	await first.click();
+	const firstDate = await first.getAttribute( 'data-date' );
+	await page.locator( `[data-qhs-reserve] [data-date="${ firstDate }"]` ).focus();
+	await page.keyboard.press( 'ArrowRight' );
+	const next = await page.evaluate( () => document.activeElement.getAttribute( 'data-date' ) );
+	expect( next ).not.toBe( firstDate );
+	await page.keyboard.press( 'Enter' );
+	const moved = page.locator( `[data-qhs-reserve] [data-date="${ next }"]` );
+	if ( await moved.evaluate( ( node ) => node.classList.contains( 'is-open' ) ) ) {
+		await expect( moved ).toHaveAttribute( 'aria-pressed', 'true' );
+	}
+	await expect( page.getByTestId( 'slot' ).first() ).toBeVisible();
+	await shot( page, testInfo, 'service' );
+} );
+
+test( 'the drawer menu opens with focus inside and closes on Escape at phone width', async ( { page }, testInfo ) => {
+	test.skip( testInfo.project.name !== 'phone', 'The drawer only shows on narrow screens.' );
+	await page.goto( '/' );
+	const opener = page.getByRole( 'button', { name: 'Open menu' } );
+	await opener.click();
+	const drawer = page.getByRole( 'dialog', { name: 'Menu' } );
+	await expect( drawer ).toBeVisible();
+	await expect( drawer.getByRole( 'link', { name: 'Services' } ) ).toBeFocused();
+	await shot( page, testInfo, 'menu' );
+	await page.keyboard.press( 'Escape' );
+	await expect( drawer ).toBeHidden();
+	await expect( opener ).toBeFocused();
 } );
