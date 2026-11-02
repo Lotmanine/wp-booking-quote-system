@@ -1,15 +1,18 @@
 <?php
 /**
- * Public wizard endpoints.
+ * Public booking endpoints.
  *
  * @package Quillmoor\Booking
  */
 
 namespace Quillmoor\Booking\Rest;
 
-use Quillmoor\Booking\Catalog;
 use Quillmoor\Booking\Config;
+use Quillmoor\Booking\Domain\Availability;
 use Quillmoor\Booking\Domain\BookingError;
+use Quillmoor\Booking\Listings\Listing;
+use Quillmoor\Booking\Listings\ListingType;
+use Quillmoor\Booking\Listings\Search;
 use Quillmoor\Booking\Security\BookingPolicy;
 use Quillmoor\Booking\Security\ClientIp;
 use Quillmoor\Booking\Services;
@@ -20,50 +23,110 @@ use WP_REST_Response;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Quote wizard API.
+ * Search, calendars, price previews, quotes and holds.
  */
 final class PublicApi {
 
 	/**
-	 * Catalog without internal fields such as the dispatch skill.
-	 */
-	public static function catalog(): WP_REST_Response {
-		$catalog = Catalog::all();
-		$out     = array();
-		foreach ( $catalog as $group => $items ) {
-			foreach ( $items as $key => $item ) {
-				$row = array(
-					'key'   => $key,
-					'label' => $item['label'],
-					'cents' => (int) ( $item['base_cents'] ?? $item['cents'] ?? $item['surcharge_cents'] ?? 0 ),
-				);
-				if ( 'services' === $group ) {
-					$row['category'] = (string) ( $item['category'] ?? '' );
-					$row['hours']    = (string) ( $item['hours'] ?? '' );
-					$row['summary']  = (string) ( $item['summary'] ?? '' );
-					$row['includes'] = array_values( array_map( 'strval', (array) ( $item['includes'] ?? array() ) ) );
-					$row['image']    = Catalog::image_url( (string) $key );
-				}
-				if ( 'sizes' === $group ) {
-					$row['multiplier'] = (int) $item['multiplier'];
-				}
-				$out[ $group ][] = $row;
-			}
-		}
-		return new WP_REST_Response( $out );
-	}
-
-	/**
-	 * Open slots for an area.
+	 * Listing cards for the explore grid and map.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 */
-	public static function availability( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-		$area = sanitize_key( (string) $request->get_param( 'area' ) );
-		if ( Catalog::capacity( $area ) < 1 ) {
-			return Respond::error( 'invalid_option', 'That option is not available.', 400 );
+	public static function listings( WP_REST_Request $request ): WP_REST_Response {
+		$filters = Search::filters( $request->get_params() );
+		$cards   = array_map( static fn( Listing $listing ): array => Search::card( $listing, $filters ), Search::find( $filters ) );
+		return new WP_REST_Response( array( 'listings' => $cards ) );
+	}
+
+	/**
+	 * Unavailable nights or closed days in a range, for the date pickers.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 */
+	public static function calendar( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$listing = self::published( (int) $request['id'] );
+		if ( null === $listing ) {
+			return Respond::error( 'not_found', 'That place is not available.', 404 );
 		}
-		return new WP_REST_Response( array( 'days' => Services::availability()->open_slots( $area ) ) );
+		$from = (string) $request->get_param( 'from' );
+		$to   = (string) $request->get_param( 'to' );
+		$from = Listing::is_date( $from ) ? $from : gmdate( 'Y-m-d' );
+		$to   = Listing::is_date( $to ) && $to >= $from ? $to : gmdate( 'Y-m-d', (int) strtotime( $from . ' 00:00:00 UTC' ) + 92 * DAY_IN_SECONDS );
+		if ( ( strtotime( $to . ' UTC' ) - strtotime( $from . ' UTC' ) ) > 400 * DAY_IN_SECONDS ) {
+			return Respond::error( 'range_too_long', 'Ask for a shorter range.', 400 );
+		}
+
+		if ( ListingType::Stay === $listing->type ) {
+			return new WP_REST_Response(
+				array(
+					'type'        => 'stay',
+					'first'       => Availability::first_check_in(),
+					'last'        => gmdate( 'Y-m-d', time() + Config::STAY_DAYS_AHEAD * DAY_IN_SECONDS ),
+					'min_nights'  => $listing->min_nights,
+					'max_nights'  => $listing->max_nights,
+					'unavailable' => Services::availability()->stay_calendar( $listing, $from, $to ),
+				)
+			);
+		}
+		return new WP_REST_Response(
+			array(
+				'type'   => 'dining',
+				'first'  => gmdate( 'Y-m-d' ),
+				'last'   => gmdate( 'Y-m-d', time() + Config::DINING_DAYS_AHEAD * DAY_IN_SECONDS ),
+				'closed' => Services::availability()->dining_calendar( $listing, $from, $to ),
+			)
+		);
+	}
+
+	/**
+	 * Open table times on one day.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 */
+	public static function slots( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$listing = self::published( (int) $request['id'] );
+		if ( null === $listing || ListingType::Dining !== $listing->type ) {
+			return Respond::error( 'not_found', 'That place is not available.', 404 );
+		}
+		$day   = (string) $request->get_param( 'date' );
+		$party = max( $listing->min_party, (int) $request->get_param( 'party' ) );
+		if ( ! Listing::is_date( $day ) ) {
+			return Respond::error( 'invalid_date', 'Choose a date.', 400 );
+		}
+		$slots = array();
+		foreach ( Services::availability()->dining_slots( $listing, $day ) as $slot ) {
+			$slots[] = $slot + array( 'fits' => $slot['seats_left'] >= $party );
+		}
+		return new WP_REST_Response( array( 'slots' => $slots ) );
+	}
+
+	/**
+	 * Server price for a request, so the booking card never computes money itself.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 */
+	public static function price( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		if ( ! Services::counters()->take( 'rl:price:' . ClientIp::hash( ClientIp::resolve() ), MINUTE_IN_SECONDS, 120 ) ) {
+			return Respond::error( 'rate_limited', 'Too many requests. Please wait a minute.', 429 );
+		}
+		$listing = Listing::find( (int) $request['id'] );
+		$preview = null !== $listing && ! $listing->is_published() && BookingPolicy::can_manage_listing( get_current_user_id(), $listing->id );
+		if ( null === $listing || ( ! $listing->is_published() && ! $preview ) ) {
+			return Respond::error( 'not_found', 'That place is not available.', 404 );
+		}
+		try {
+			$quote = Services::service()->price_request(
+				$listing,
+				sanitize_text_field( (string) $request->get_param( 'check_in' ) ),
+				sanitize_text_field( (string) $request->get_param( 'check_out' ) ),
+				sanitize_text_field( (string) $request->get_param( 'slot_start' ) ),
+				max( 1, (int) $request->get_param( 'guests' ) ),
+				self::extras( $request )
+			);
+		} catch ( BookingError $e ) {
+			return Respond::from( $e );
+		}
+		return new WP_REST_Response( Respond::price( $quote['price'] ) );
 	}
 
 	/**
@@ -81,7 +144,7 @@ final class PublicApi {
 		$name  = sanitize_text_field( (string) $request->get_param( 'full_name' ) );
 		$user  = get_current_user_id();
 
-		// A signed-in customer books under their own record, whatever the form says.
+		// A signed-in guest books under their own record, whatever the form says.
 		$own = $user > 0 ? Services::bookings()->customer_by_user( $user ) : null;
 		if ( null !== $own ) {
 			$email = (string) $own['email'];
@@ -92,16 +155,15 @@ final class PublicApi {
 			return Respond::error( 'invalid_contact', 'Please enter your name and a valid email.', 400 );
 		}
 
-		$extras = $request->get_param( 'extras' );
-		$extras = is_array( $extras ) ? array_map( 'sanitize_key', array_map( 'strval', $extras ) ) : array();
-
 		try {
 			$result = Services::service()->create_quote(
 				array(
-					'service'           => sanitize_key( (string) $request->get_param( 'service' ) ),
-					'size'              => sanitize_key( (string) $request->get_param( 'size' ) ),
-					'area'              => sanitize_key( (string) $request->get_param( 'area' ) ),
-					'extras'            => $extras,
+					'listing_id'        => (int) $request->get_param( 'listing_id' ),
+					'check_in'          => sanitize_text_field( (string) $request->get_param( 'check_in' ) ),
+					'check_out'         => sanitize_text_field( (string) $request->get_param( 'check_out' ) ),
+					'slot_start'        => sanitize_text_field( (string) $request->get_param( 'slot_start' ) ),
+					'guests'            => max( 1, (int) $request->get_param( 'guests' ) ),
+					'extras'            => self::extras( $request ),
 					'email'             => $email,
 					'full_name'         => $name,
 					'note'              => mb_substr( sanitize_textarea_field( (string) $request->get_param( 'note' ) ), 0, 500 ),
@@ -124,7 +186,8 @@ final class PublicApi {
 	}
 
 	/**
-	 * Hold a slot.
+	 * Hold the nights or seats of a quote for ten minutes. The hold works even while payments are
+	 * not set up, so the guest sees the real availability and an honest payment step.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 */
@@ -133,9 +196,6 @@ final class PublicApi {
 		if ( null !== $blocked ) {
 			return $blocked;
 		}
-		if ( ! Services::deposit()->is_available() ) {
-			return Respond::error( 'payments_unavailable', 'Deposits are not set up yet.', 503 );
-		}
 
 		$booking = Respond::viewable_for_change( $request, (int) $request->get_param( 'booking_id' ) );
 		if ( $booking instanceof WP_Error ) {
@@ -143,15 +203,17 @@ final class PublicApi {
 		}
 
 		try {
-			$held = Services::service()->hold( (int) $booking['id'], sanitize_text_field( (string) $request->get_param( 'slot_start' ) ), Respond::actor( $request )->label() );
+			$held = Services::service()->hold( (int) $booking['id'], Respond::actor( $request )->label() );
 		} catch ( BookingError $e ) {
 			return Respond::from( $e );
 		}
 
+		$payable = Services::deposit()->is_available();
 		return new WP_REST_Response(
 			array(
-				'booking' => Respond::booking( $held ),
-				'pay_url' => Services::deposit()->pay_url( $held ),
+				'booking'        => Respond::booking( $held ),
+				'pay_url'        => $payable ? Services::deposit()->pay_url( $held ) : null,
+				'payment_status' => $payable ? 'ready' : 'not_set_up',
 			),
 			201
 		);
@@ -174,7 +236,15 @@ final class PublicApi {
 	}
 
 	/**
-	 * Per-IP limit first because it is cheap, then Turnstile.
+	 * Whether a visitor who is not signed in can reserve: that needs the security check.
+	 */
+	public static function guests_can_reserve(): bool {
+		return '' !== Config::get( 'TURNSTILE_SITE_KEY' ) && '' !== Config::get( 'TURNSTILE_SECRET_KEY' );
+	}
+
+	/**
+	 * Per-IP limit first because it is cheap, then the security check for visitors who are not
+	 * signed in. Accounts are created by the site only, so a signed-in request skips Turnstile.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @param string          $name    Limit name.
@@ -185,9 +255,36 @@ final class PublicApi {
 		if ( ! Services::counters()->take( 'rl:' . $name . ':' . ClientIp::hash( $ip ), MINUTE_IN_SECONDS, $limit ) ) {
 			return Respond::error( 'rate_limited', 'Too many requests. Please wait a minute.', 429 );
 		}
+		if ( get_current_user_id() > 0 ) {
+			return null;
+		}
+		if ( ! self::guests_can_reserve() ) {
+			return Respond::error( 'signin_required', 'Sign in to reserve. The security check for guests is not set up yet on this demo.', 403 );
+		}
 		if ( ! Services::turnstile()->verify( (string) $request->get_param( 'turnstile_token' ), $ip ) ) {
 			return Respond::error( 'turnstile_failed', 'Please complete the security check.', 403 );
 		}
 		return null;
+	}
+
+	/**
+	 * Extra keys from the request.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return string[]
+	 */
+	private static function extras( WP_REST_Request $request ): array {
+		$extras = $request->get_param( 'extras' );
+		return is_array( $extras ) ? array_values( array_filter( array_map( 'sanitize_title', array_map( 'strval', $extras ) ) ) ) : array();
+	}
+
+	/**
+	 * A published listing, or null.
+	 *
+	 * @param int $id Listing id.
+	 */
+	private static function published( int $id ): ?Listing {
+		$listing = Listing::find( $id );
+		return null !== $listing && $listing->is_published() ? $listing : null;
 	}
 }

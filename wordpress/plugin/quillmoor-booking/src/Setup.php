@@ -7,7 +7,9 @@
 
 namespace Quillmoor\Booking;
 
+use Quillmoor\Booking\Demo\DemoReset;
 use Quillmoor\Booking\Demo\Roles;
+use Quillmoor\Booking\Demo\Seeder;
 use Quillmoor\Booking\Payment\WooHooks;
 use WC_Install;
 use WC_Product_Simple;
@@ -28,12 +30,23 @@ final class Setup {
 		self::woocommerce();
 		self::deposit_product();
 		self::pages();
-		update_option( 'blogdescription', 'A fictional home services company' );
+		update_option( 'blogname', 'Quillmoor' );
+		update_option( 'blogdescription', 'A fictional place to book stays and tables' );
 		update_option( 'timezone_string', 'UTC' );
 		update_option( 'users_can_register', 0 );
 		update_option( 'default_comment_status', 'closed' );
 		wp_delete_post( 1, true );
 		wp_delete_post( 2, true );
+
+		// First start after an upgrade: restore the whole demo when allowed, else seed the places.
+		if ( ! Seeder::is_seeded() ) {
+			if ( DemoReset::is_allowed() ) {
+				DemoReset::run();
+			} else {
+				Seeder::run( false );
+			}
+		}
+		flush_rewrite_rules( false );
 	}
 
 	/**
@@ -80,17 +93,17 @@ final class Setup {
 	 * Create pages from the theme's block markup. App pages use the template without a title.
 	 */
 	private static function pages(): void {
-		$services = '<!-- wp:group {"className":"qhs-container qm-browse","layout":{"type":"default"}} --><div class="wp-block-group qhs-container qm-browse">'
-			. '<!-- wp:paragraph {"className":"qm-eyebrow"} --><p class="qm-eyebrow">Book a service</p><!-- /wp:paragraph -->'
-			. '<!-- wp:heading {"level":1,"className":"qm-browse__title"} --><h1 class="wp-block-heading qm-browse__title">Find the right visit</h1><!-- /wp:heading -->'
-			. '<!-- wp:quillmoor/services /--></div><!-- /wp:group -->';
-		$pages    = array(
-			'home'     => array( 'Quillmoor Home Services', '<!-- wp:pattern {"slug":"quillmoor/home"} /-->', '' ),
-			'services' => array( 'Services', $services, 'page-app' ),
-			'book'     => array( 'Book a service', '<!-- wp:quillmoor/service /-->', 'page-app' ),
-			'portal'   => array( 'Your bookings', '<!-- wp:quillmoor/portal /-->', 'page-app' ),
-			'staff'    => array( 'Staff agenda', '<!-- wp:quillmoor/staff /-->', 'page-app' ),
-			'demo'     => array( 'Try the demo', '<!-- wp:pattern {"slug":"quillmoor/demo"} /-->', '' ),
+		$explore = '<!-- wp:group {"className":"qm-container qm-explore-page","layout":{"type":"default"}} --><div class="wp-block-group qm-container qm-explore-page">'
+			. '<!-- wp:quillmoor/search {"compact":true} /--><!-- wp:quillmoor/explore /--></div><!-- /wp:group -->';
+		$credits = '<!-- wp:group {"className":"qm-container qm-narrow","layout":{"type":"default"}} --><div class="wp-block-group qm-container qm-narrow">'
+			. '<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Photo credits</h1><!-- /wp:heading -->'
+			. '<!-- wp:quillmoor/credits /--></div><!-- /wp:group -->';
+		$pages   = array(
+			'home'          => array( 'Quillmoor', '<!-- wp:pattern {"slug":"quillmoor/home"} /-->', 'page-app' ),
+			'explore'       => array( 'Explore', $explore, 'page-app' ),
+			'trips'         => array( 'Trips', '<!-- wp:group {"className":"qm-container","layout":{"type":"default"}} --><div class="wp-block-group qm-container"><!-- wp:quillmoor/trips /--></div><!-- /wp:group -->', 'page-app' ),
+			'demo'          => array( 'Demo logins', '<!-- wp:pattern {"slug":"quillmoor/demo"} /-->', '' ),
+			'photo-credits' => array( 'Photo credits', $credits, 'page-app' ),
 		);
 		foreach ( $pages as $slug => $page ) {
 			$found = get_page_by_path( $slug );
@@ -113,10 +126,12 @@ final class Setup {
 			}
 		}
 
-		// The step-by-step wizard page was replaced by the service page. Old links redirect to /services/.
-		$old = get_page_by_path( 'quote' );
-		if ( $old ) {
-			wp_delete_post( $old->ID, true );
+		// Pages of the home services version. Their old links redirect to the new pages.
+		foreach ( array( 'quote', 'services', 'book', 'portal', 'staff' ) as $old_slug ) {
+			$old = get_page_by_path( $old_slug );
+			if ( $old ) {
+				wp_delete_post( $old->ID, true );
+			}
 		}
 
 		$checkout = function_exists( 'wc_get_page_id' ) ? (int) wc_get_page_id( 'checkout' ) : 0;
@@ -124,7 +139,7 @@ final class Setup {
 			wp_update_post(
 				array(
 					'ID'         => $checkout,
-					'post_title' => 'Confirm and pay your deposit',
+					'post_title' => 'Pay your deposit',
 				)
 			);
 		}

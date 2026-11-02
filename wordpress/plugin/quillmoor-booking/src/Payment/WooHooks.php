@@ -196,7 +196,7 @@ final class WooHooks {
 	 */
 	public static function validate_store_api_cart( WP_Error $errors, WC_Cart $cart ): void {
 		if ( null !== self::expired_hold_in( $cart ) ) {
-			$errors->add( 'qhs_hold_expired', __( 'Your slot hold has expired. Please choose a slot again.', 'quillmoor-booking' ) );
+			$errors->add( 'qhs_hold_expired', __( 'Your hold has expired. Please choose your dates again.', 'quillmoor-booking' ) );
 		}
 	}
 
@@ -205,7 +205,7 @@ final class WooHooks {
 	 */
 	public static function validate_classic_checkout(): void {
 		if ( null !== self::expired_hold_in( WC()->cart ) ) {
-			wc_add_notice( __( 'Your slot hold has expired. Please choose a slot again.', 'quillmoor-booking' ), 'error' );
+			wc_add_notice( __( 'Your hold has expired. Please choose your dates again.', 'quillmoor-booking' ), 'error' );
 		}
 	}
 

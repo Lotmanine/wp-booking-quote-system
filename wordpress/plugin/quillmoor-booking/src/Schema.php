@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Schema {
 
-	public const VERSION = '1';
+	public const VERSION = '3';
 
 	/**
 	 * Run dbDelta for every table.
@@ -34,8 +34,24 @@ final class Schema {
 	 * Create tables on sites that activated before a schema change.
 	 */
 	public static function maybe_upgrade(): void {
-		if ( self::VERSION !== get_option( 'qhs_schema_version' ) ) {
-			self::install();
+		$stored = (string) get_option( 'qhs_schema_version' );
+		if ( self::VERSION === $stored ) {
+			return;
+		}
+		if ( '1' === $stored ) {
+			self::drop_v1_tables();
+		}
+		self::install();
+	}
+
+	/**
+	 * Version 1 booked home-service visits. Its booking rows have no listing, so they cannot be
+	 * migrated; the demo starts again from its seed data.
+	 */
+	private static function drop_v1_tables(): void {
+		global $wpdb;
+		foreach ( array( 'bookings', 'quotes', 'slot_claims', 'booking_history', 'outbox', 'triage' ) as $name ) {
+			$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', Db::table( $name ) ) );
 		}
 	}
 
@@ -61,11 +77,14 @@ created_at datetime NOT NULL,
 PRIMARY KEY  (id),
 UNIQUE KEY email (email),
 KEY user_id (user_id)",
-			'quotes'          => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			'quotes'          => "id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 customer_id bigint(20) unsigned NOT NULL,
-service varchar(40) NOT NULL,
-size varchar(40) NOT NULL,
-area varchar(40) NOT NULL,
+listing_id bigint(20) unsigned NOT NULL,
+listing_type varchar(10) NOT NULL DEFAULT 'stay',
+check_in date NULL,
+check_out date NULL,
+slot_start datetime NULL,
+guests smallint(5) unsigned NOT NULL DEFAULT 1,
 extras text NOT NULL,
 line_items text NOT NULL,
 total_cents int(10) unsigned NOT NULL,
@@ -73,42 +92,85 @@ deposit_cents int(10) unsigned NOT NULL,
 valid_until datetime NOT NULL,
 created_at datetime NOT NULL,
 PRIMARY KEY  (id),
-KEY customer_id (customer_id)',
+KEY customer_id (customer_id)",
 			'bookings'        => "id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 quote_id bigint(20) unsigned NOT NULL,
 customer_id bigint(20) unsigned NOT NULL,
+listing_id bigint(20) unsigned NOT NULL,
+listing_type varchar(10) NOT NULL DEFAULT 'stay',
+host_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+location varchar(60) NOT NULL DEFAULT '',
 state varchar(20) NOT NULL DEFAULT 'quote',
 version int(10) unsigned NOT NULL DEFAULT 1,
-service varchar(40) NOT NULL,
-area varchar(40) NOT NULL,
+check_in date NULL,
+check_out date NULL,
 slot_start datetime NULL,
+slot_end datetime NULL,
+guests smallint(5) unsigned NOT NULL DEFAULT 1,
 hold_expires_at datetime NULL,
 order_id bigint(20) unsigned NOT NULL DEFAULT 0,
 staff_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
-job_status varchar(20) NOT NULL DEFAULT 'scheduled',
 priority varchar(10) NOT NULL DEFAULT 'normal',
 customer_note varchar(500) NOT NULL DEFAULT '',
 access_key char(32) NOT NULL,
 refund_status varchar(20) NOT NULL DEFAULT 'none',
+refund_cents int(10) unsigned NOT NULL DEFAULT 0,
+refunded_at datetime NULL,
+requested_at datetime NULL,
 reminder_sent_at datetime NULL,
 followup_sent_at datetime NULL,
+arrived_at datetime NULL,
 completed_at datetime NULL,
 created_at datetime NOT NULL,
 PRIMARY KEY  (id),
 KEY state_slot (state,slot_start),
 KEY customer_id (customer_id),
-KEY staff_user_id (staff_user_id)",
-			'slot_claims'     => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-area varchar(40) NOT NULL,
-slot_start datetime NOT NULL,
-unit tinyint(3) unsigned NOT NULL DEFAULT 1,
-booking_id bigint(20) unsigned NOT NULL,
+KEY host_user_id (host_user_id),
+KEY staff_user_id (staff_user_id),
+KEY listing_id (listing_id)",
+			'night_claims'    => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+listing_id bigint(20) unsigned NOT NULL,
+night date NOT NULL,
+booking_id bigint(20) unsigned NOT NULL DEFAULT 0,
+kind varchar(10) NOT NULL,
 expires_at datetime NULL,
 created_at datetime NOT NULL,
 PRIMARY KEY  (id),
-UNIQUE KEY slot_unit (area,slot_start,unit),
+UNIQUE KEY listing_night (listing_id,night),
 KEY booking_id (booking_id),
 KEY expires_at (expires_at)',
+			'table_slots'     => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+listing_id bigint(20) unsigned NOT NULL,
+slot_start datetime NOT NULL,
+capacity smallint(5) unsigned NOT NULL,
+booked smallint(5) unsigned NOT NULL DEFAULT 0,
+closed tinyint(1) NOT NULL DEFAULT 0,
+PRIMARY KEY  (id),
+UNIQUE KEY listing_slot (listing_id,slot_start)',
+			'table_claims'    => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+booking_id bigint(20) unsigned NOT NULL,
+listing_id bigint(20) unsigned NOT NULL,
+slot_start datetime NOT NULL,
+covers smallint(5) unsigned NOT NULL,
+expires_at datetime NULL,
+created_at datetime NOT NULL,
+PRIMARY KEY  (id),
+UNIQUE KEY booking_slot (booking_id,slot_start),
+KEY listing_slot (listing_id,slot_start)',
+			'day_closures'    => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+listing_id bigint(20) unsigned NOT NULL,
+day date NOT NULL,
+created_by bigint(20) unsigned NOT NULL DEFAULT 0,
+created_at datetime NOT NULL,
+PRIMARY KEY  (id),
+UNIQUE KEY listing_day (listing_id,day)',
+			'booking_notes'   => 'id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+booking_id bigint(20) unsigned NOT NULL,
+author_id bigint(20) unsigned NOT NULL,
+body varchar(1000) NOT NULL,
+created_at datetime NOT NULL,
+PRIMARY KEY  (id),
+KEY booking_id (booking_id)',
 			'booking_history' => "id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 booking_id bigint(20) unsigned NOT NULL,
 from_state varchar(20) NOT NULL,

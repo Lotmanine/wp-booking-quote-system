@@ -7,11 +7,15 @@
 
 namespace Quillmoor\Booking;
 
+use Quillmoor\Booking\Admin\Actions;
 use Quillmoor\Booking\Admin\AdminPages;
+use Quillmoor\Booking\Admin\ListingEditor;
 use Quillmoor\Booking\Cli\Command;
 use Quillmoor\Booking\Demo\Banner;
 use Quillmoor\Booking\Demo\DemoGuard;
 use Quillmoor\Booking\Demo\DemoReset;
+use Quillmoor\Booking\Listings\Fields;
+use Quillmoor\Booking\Listings\PostTypes;
 use Quillmoor\Booking\Payment\WooHooks;
 use Quillmoor\Booking\Rest\Routes;
 use Quillmoor\Booking\Security\StripeKeyGuard;
@@ -36,8 +40,12 @@ final class Plugin {
 		StripeKeyGuard::register();
 		Banner::register();
 		DemoGuard::register();
+		PostTypes::register();
+		Fields::register();
 		Routes::register();
 		AdminPages::register();
+		Actions::register();
+		ListingEditor::register();
 		Blocks::register();
 
 		if ( class_exists( 'WooCommerce' ) ) {
@@ -77,10 +85,11 @@ final class Plugin {
 	}
 
 	/**
-	 * Release expired holds.
+	 * Release expired holds and decline requests the host left unanswered.
 	 */
 	public static function expire_holds(): void {
 		Services::service()->release_expired_holds();
+		Services::service()->expire_requests();
 	}
 
 	/**

@@ -18,7 +18,7 @@ done
 if ! wp core is-installed >/dev/null 2>&1; then
 	wp core install \
 		--url="${WP_HOME}" \
-		--title="Quillmoor Home Services" \
+		--title="Quillmoor" \
 		--admin_user="${WP_ADMIN_USER}" \
 		--admin_email="${WP_ADMIN_EMAIL}" \
 		--admin_password="${WP_ADMIN_PASSWORD}" \
@@ -27,7 +27,7 @@ fi
 
 wp rewrite structure '/%postname%/'
 wp theme activate quillmoor
-wp plugin activate woocommerce woocommerce-gateway-stripe fluent-crm quillmoor-booking
+wp plugin activate secure-custom-fields woocommerce woocommerce-gateway-stripe fluent-crm quillmoor-booking
 wp qhs setup
 if [ "${QHS_DEMO_SITE:-0}" = "1" ] && ! wp user get demo-customer >/dev/null 2>&1; then
 	wp qhs reset --yes

@@ -14,13 +14,15 @@ use Quillmoor\Booking\Crm\NullCrm;
 use Quillmoor\Booking\Domain\Availability;
 use Quillmoor\Booking\Domain\BookingRepository;
 use Quillmoor\Booking\Domain\BookingService;
-use Quillmoor\Booking\Domain\SlotClaims;
+use Quillmoor\Booking\Domain\NightClaims;
+use Quillmoor\Booking\Domain\TableSlots;
 use Quillmoor\Booking\Domain\StateMachine;
 use Quillmoor\Booking\Mail\BrevoMailer;
 use Quillmoor\Booking\Mail\LogOnlyMailer;
 use Quillmoor\Booking\Mail\MailPort;
 use Quillmoor\Booking\Mail\MailService;
 use Quillmoor\Booking\Payment\DepositPort;
+use Quillmoor\Booking\Payment\Refunds;
 use Quillmoor\Booking\Payment\WooDepositPort;
 use Quillmoor\Booking\Security\BookingPolicy;
 use Quillmoor\Booking\Security\Counters;
@@ -104,17 +106,24 @@ final class Services {
 	}
 
 	/**
-	 * Slot claims.
+	 * Night claims for stays.
 	 */
-	public static function claims(): SlotClaims {
-		return self::once( SlotClaims::class, static fn() => new SlotClaims() );
+	public static function nights(): NightClaims {
+		return self::once( NightClaims::class, static fn() => new NightClaims() );
+	}
+
+	/**
+	 * Seat capacity for dining.
+	 */
+	public static function tables(): TableSlots {
+		return self::once( TableSlots::class, static fn() => new TableSlots() );
 	}
 
 	/**
 	 * Availability.
 	 */
 	public static function availability(): Availability {
-		return self::once( Availability::class, static fn() => new Availability( self::claims() ) );
+		return self::once( Availability::class, static fn() => new Availability( self::nights(), self::tables() ) );
 	}
 
 	/**
@@ -184,7 +193,14 @@ final class Services {
 	public static function service(): BookingService {
 		return self::once(
 			BookingService::class,
-			static fn() => new BookingService( self::bookings(), self::machine(), self::claims(), self::availability(), self::outbox(), self::mail() )
+			static fn() => new BookingService( self::bookings(), self::machine(), self::nights(), self::tables(), self::availability(), self::outbox(), self::mail() )
 		);
+	}
+
+	/**
+	 * Deposit refunds.
+	 */
+	public static function refunds(): Refunds {
+		return self::once( Refunds::class, static fn() => new Refunds( self::bookings() ) );
 	}
 }

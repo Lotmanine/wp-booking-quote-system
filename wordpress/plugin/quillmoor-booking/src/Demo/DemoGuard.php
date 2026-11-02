@@ -7,6 +7,7 @@
 
 namespace Quillmoor\Booking\Demo;
 
+use Quillmoor\Booking\Listings\PostTypes;
 use WP_Error;
 use WP_User;
 
@@ -19,7 +20,12 @@ final class DemoGuard {
 
 	public const META = 'qhs_demo_account';
 
-	private const ALLOWED_SCREENS = array( 'admin.php', 'admin-post.php', 'admin-ajax.php' );
+	private const ALLOWED_SCREENS = array( 'admin.php', 'admin-post.php', 'admin-ajax.php', 'async-upload.php', 'edit.php', 'post.php', 'post-new.php', 'edit-tags.php', 'term.php', 'upload.php', 'media-upload.php' );
+
+	/**
+	 * Booking screens a demo host or manager may open.
+	 */
+	public const OWN_PAGES = array( 'qhs-dashboard', 'qhs-bookings', 'qhs-booking', 'qhs-calendar', 'qhs-activity' );
 
 	/**
 	 * Register hooks.
@@ -31,6 +37,8 @@ final class DemoGuard {
 		add_action( 'user_profile_update_errors', array( self::class, 'refuse_profile_update' ), 10, 3 );
 		add_action( 'woocommerce_save_account_details_errors', array( self::class, 'refuse_account_update' ), 10, 2 );
 		add_action( 'admin_init', array( self::class, 'limit_admin_screens' ) );
+		// Core refuses pages a role cannot open before admin_init runs; send demo users home instead.
+		add_action( 'admin_page_access_denied', array( self::class, 'limit_admin_screens' ) );
 		add_filter( 'show_admin_bar', array( self::class, 'show_admin_bar' ) );
 		add_filter( 'login_redirect', array( self::class, 'login_redirect' ), 20, 3 );
 		add_filter( 'woocommerce_prevent_admin_access', array( self::class, 'allow_manager_admin' ) );
@@ -106,7 +114,7 @@ final class DemoGuard {
 	}
 
 	/**
-	 * Keep demo users on the booking screens.
+	 * Keep demo users on the booking screens and the listing editor. Guests stay on the front end.
 	 */
 	public static function limit_admin_screens(): void {
 		$user_id = get_current_user_id();
@@ -114,12 +122,23 @@ final class DemoGuard {
 			return;
 		}
 		global $pagenow;
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only routing check.
+		$user  = wp_get_current_user();
+		$staff = array_intersect( array( Roles::MANAGER, Roles::HOST ), $user->roles );
+		if ( array() === $staff ) {
+			wp_safe_redirect( home_url( '/trips/' ) );
+			exit;
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only routing check.
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
-		$own  = in_array( $page, array( 'qhs-calendar', 'qhs-bookings', 'qhs-reports', 'qhs-triage' ), true );
-		if ( ! in_array( $pagenow, self::ALLOWED_SCREENS, true ) || ( 'admin.php' === $pagenow && ! $own ) ) {
-			$user = wp_get_current_user();
-			wp_safe_redirect( in_array( Roles::MANAGER, $user->roles, true ) ? admin_url( 'admin.php?page=qhs-calendar' ) : home_url( '/' ) );
+		$type = isset( $_GET['post_type'] ) ? sanitize_key( wp_unslash( $_GET['post_type'] ) ) : '';
+		$tax  = isset( $_GET['taxonomy'] ) ? sanitize_key( wp_unslash( $_GET['taxonomy'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		$allowed = in_array( $pagenow, self::ALLOWED_SCREENS, true )
+			&& ( 'admin.php' !== $pagenow || in_array( $page, self::OWN_PAGES, true ) )
+			&& ( ! in_array( $pagenow, array( 'edit.php', 'post-new.php' ), true ) || PostTypes::LISTING === $type )
+			&& ( ! in_array( $pagenow, array( 'edit-tags.php', 'term.php' ), true ) || in_array( $tax, array( PostTypes::LOCATION, PostTypes::CATEGORY, PostTypes::AMENITY ), true ) );
+		if ( ! $allowed ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=qhs-dashboard' ) );
 			exit;
 		}
 	}
@@ -144,25 +163,22 @@ final class DemoGuard {
 		if ( ! $user instanceof WP_User ) {
 			return $redirect;
 		}
-		if ( in_array( Roles::MANAGER, $user->roles, true ) ) {
-			return admin_url( 'admin.php?page=qhs-calendar' );
-		}
-		if ( in_array( Roles::STAFF, $user->roles, true ) ) {
-			return home_url( '/staff/' );
+		if ( array() !== array_intersect( array( Roles::MANAGER, Roles::HOST ), $user->roles ) ) {
+			return admin_url( 'admin.php?page=qhs-dashboard' );
 		}
 		if ( in_array( Roles::CUSTOMER, $user->roles, true ) ) {
-			return home_url( '/portal/' );
+			return '' !== $requested && str_starts_with( $requested, home_url( '/' ) ) && ! str_contains( $requested, 'wp-admin' ) ? $requested : home_url( '/trips/' );
 		}
 		return $redirect;
 	}
 
 	/**
-	 * WooCommerce pushes users without shop caps out of wp-admin; managers need their screens.
+	 * WooCommerce pushes users without shop caps out of wp-admin; hosts and managers need their screens.
 	 *
 	 * @param bool $prevent Current value.
 	 */
 	public static function allow_manager_admin( bool $prevent ): bool {
 		$user = wp_get_current_user();
-		return in_array( Roles::MANAGER, $user->roles, true ) ? false : $prevent;
+		return array() !== array_intersect( array( Roles::MANAGER, Roles::HOST ), $user->roles ) ? false : $prevent;
 	}
 }

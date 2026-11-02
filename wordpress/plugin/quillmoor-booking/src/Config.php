@@ -15,12 +15,15 @@ defined( 'ABSPATH' ) || exit;
 final class Config {
 
 	public const HOLD_MINUTES         = 10;
-	public const MIN_LEAD_HOURS       = 12;
-	public const BOOKING_DAYS_AHEAD   = 14;
+	public const STAY_DAYS_AHEAD      = 270;
+	public const DINING_DAYS_AHEAD    = 60;
+	public const DINING_LEAD_MINUTES  = 120;
+	public const ARRIVAL_WINDOW_HOURS = 36;
+	public const REQUEST_HOURS        = 24;
 	public const CHANGE_CUTOFF_HOURS  = 24;
 	public const MAX_ACTIVE_HOLDS     = 3;
 	public const SIGNATURE_WINDOW     = 300;
-	public const MAIL_FROM_NAME       = 'Quillmoor Home Services (demo)';
+	public const MAIL_FROM_NAME       = 'Quillmoor (demo)';
 	public const CONSENT_TEXT_VERSION = '2026-11-02';
 
 	/**

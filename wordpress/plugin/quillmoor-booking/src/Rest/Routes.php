@@ -31,26 +31,24 @@ final class Routes {
 	public static function routes(): void {
 		$open = '__return_true';
 
-		// Public. Each write verifies Turnstile and a per-IP limit inside the handler.
-		self::add( '/catalog', WP_REST_Server::READABLE, array( PublicApi::class, 'catalog' ), $open );
-		self::add( '/availability', WP_REST_Server::READABLE, array( PublicApi::class, 'availability' ), $open );
+		// Public reads.
+		self::add( '/listings', WP_REST_Server::READABLE, array( PublicApi::class, 'listings' ), $open );
+		self::add( '/listings/(?P<id>\d+)/calendar', WP_REST_Server::READABLE, array( PublicApi::class, 'calendar' ), $open );
+		self::add( '/listings/(?P<id>\d+)/slots', WP_REST_Server::READABLE, array( PublicApi::class, 'slots' ), $open );
+		self::add( '/listings/(?P<id>\d+)/price', WP_REST_Server::CREATABLE, array( PublicApi::class, 'price' ), $open );
+
+		// Public writes. Each verifies a per-IP limit and, for visitors who are not signed in, Turnstile.
 		self::add( '/quote', WP_REST_Server::CREATABLE, array( PublicApi::class, 'quote' ), $open );
 		self::add( '/hold', WP_REST_Server::CREATABLE, array( PublicApi::class, 'hold' ), $open );
 		self::add( '/verify-email', WP_REST_Server::CREATABLE, array( PublicApi::class, 'verify_email' ), $open );
 
-		// Portal. Object-level checks run through BookingPolicy inside each handler.
+		// Trips. Object-level checks run through BookingPolicy inside each handler.
 		self::add( '/bookings', WP_REST_Server::READABLE, array( PortalApi::class, 'list_mine' ), $open );
 		self::add( '/bookings/(?P<id>\d+)', WP_REST_Server::READABLE, array( PortalApi::class, 'show' ), $open );
-		self::add( '/bookings/(?P<id>\d+)/reschedule', WP_REST_Server::CREATABLE, array( PortalApi::class, 'reschedule' ), $open );
+		self::add( '/bookings/(?P<id>\d+)/change', WP_REST_Server::CREATABLE, array( PortalApi::class, 'change' ), $open );
 		self::add( '/bookings/(?P<id>\d+)/cancel', WP_REST_Server::CREATABLE, array( PortalApi::class, 'cancel' ), $open );
 		self::add( '/bookings/(?P<id>\d+)/pdf/(?P<kind>quote|confirmation)', WP_REST_Server::READABLE, array( PortalApi::class, 'pdf' ), $open );
 		self::add( '/consent', WP_REST_Server::CREATABLE, array( PortalApi::class, 'consent' ), $open );
-
-		// Staff.
-		$staff = array( StaffApi::class, 'can_work' );
-		self::add( '/staff/schedule', WP_REST_Server::READABLE, array( StaffApi::class, 'schedule' ), $staff );
-		self::add( '/staff/jobs/(?P<id>\d+)/status', WP_REST_Server::CREATABLE, array( StaffApi::class, 'status' ), $staff );
-		self::add( '/staff/jobs/(?P<id>\d+)/triage', WP_REST_Server::CREATABLE, array( StaffApi::class, 'triage' ), $staff );
 
 		// Machine to machine. The permission callback verifies the signed envelope.
 		$n8n      = array( MachineApi::class, 'verify_n8n' );

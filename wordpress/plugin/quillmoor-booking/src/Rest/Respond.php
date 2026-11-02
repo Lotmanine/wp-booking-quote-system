@@ -7,9 +7,12 @@
 
 namespace Quillmoor\Booking\Rest;
 
-use Quillmoor\Booking\Catalog;
 use Quillmoor\Booking\Domain\BookingError;
 use Quillmoor\Booking\Domain\BookingState;
+use Quillmoor\Booking\Domain\BookingView;
+use Quillmoor\Booking\Listings\Listing;
+use Quillmoor\Booking\Listings\Pricing;
+use Quillmoor\Booking\Payment\Refunds;
 use Quillmoor\Booking\Security\Actor;
 use Quillmoor\Booking\Security\StripeKeyGuard;
 use Quillmoor\Booking\Services;
@@ -95,37 +98,84 @@ final class Respond {
 	}
 
 	/**
-	 * Public view of a booking. Internal keys never leave the server.
+	 * Price breakdown as the card shows it.
+	 *
+	 * @param array{line_items:array<int,array{label:string,cents:int}>,total_cents:int,deposit_cents:int,nights:int} $price Price.
+	 * @return array<string,mixed>
+	 */
+	public static function price( array $price ): array {
+		return array(
+			'lines'         => array_map(
+				static fn( array $line ): array => array(
+					'label'  => $line['label'],
+					'amount' => Pricing::money( $line['cents'] ),
+				),
+				$price['line_items']
+			),
+			'total'         => Pricing::money( $price['total_cents'] ),
+			'deposit'       => Pricing::money( $price['deposit_cents'] ),
+			'balance'       => Pricing::money( max( 0, $price['total_cents'] - $price['deposit_cents'] ) ),
+			'total_cents'   => $price['total_cents'],
+			'deposit_cents' => $price['deposit_cents'],
+			'nights'        => $price['nights'],
+		);
+	}
+
+	/**
+	 * Public view of a booking. Internal keys never leave the server, and the street address is
+	 * shared only once the booking is confirmed.
 	 *
 	 * @param array<string,mixed> $booking Booking row.
 	 * @return array<string,mixed>
 	 */
 	public static function booking( array $booking ): array {
-		$quote = Services::bookings()->quote( (int) $booking['quote_id'] );
-		$state = BookingState::from( (string) $booking['state'] );
-		$staff = (int) $booking['staff_user_id'] > 0 ? get_userdata( (int) $booking['staff_user_id'] ) : false;
-		$slot  = BookingState::Quote === $state ? null : $booking['slot_start'];
+		$quote   = Services::bookings()->quote( (int) $booking['quote_id'] );
+		$state   = BookingState::from( (string) $booking['state'] );
+		$listing = Listing::find( (int) $booking['listing_id'] );
+		$photo   = null === $listing ? array() : $listing->photo_list( 'medium_large' );
+		$lines   = json_decode( (string) ( $quote['line_items'] ?? '[]' ), true );
+		$host    = null === $listing ? false : get_userdata( $listing->host_id );
+		$known   = in_array( $state, array( BookingState::Confirmed, BookingState::Arrived, BookingState::Completed ), true );
+		$total   = (int) ( $quote['total_cents'] ?? 0 );
+		$deposit = (int) ( $quote['deposit_cents'] ?? 0 );
 
 		return array(
 			'id'              => (int) $booking['id'],
-			'ref'             => 'QHS-' . $booking['id'],
+			'ref'             => BookingView::ref( $booking ),
 			'state'           => $state->value,
-			'state_label'     => $state->label(),
-			'service'         => Catalog::label( 'services', (string) $booking['service'] ),
-			'service_key'     => (string) $booking['service'],
-			'image'           => Catalog::image_url( (string) $booking['service'] ),
-			'area'            => Catalog::label( 'areas', (string) $booking['area'] ),
-			'area_key'        => (string) $booking['area'],
-			'slot_start'      => $slot,
+			'state_label'     => BookingView::state_label( $booking ),
+			'type'            => (string) $booking['listing_type'],
+			'listing'         => array(
+				'id'     => (int) $booking['listing_id'],
+				'title'  => BookingView::listing_title( $booking ),
+				'url'    => null === $listing ? '' : $listing->url(),
+				'photo'  => $photo[0]['url'] ?? '',
+				'kind'   => null === $listing ? '' : $listing->kind_label(),
+				'policy' => null === $listing ? '' : $listing->cancellation_text(),
+			),
+			'host_name'       => $host ? $host->display_name : '',
+			'address'         => $known && null !== $listing ? $listing->address : '',
+			'when'            => BookingView::when( $booking ),
+			'check_in'        => $booking['check_in'],
+			'check_out'       => $booking['check_out'],
+			'slot_start'      => $booking['slot_start'],
+			'guests'          => (int) $booking['guests'],
 			'hold_expires_at' => $booking['hold_expires_at'],
-			'job_status'      => (string) $booking['job_status'],
-			'priority'        => (string) $booking['priority'],
-			'staff_name'      => $staff ? $staff->display_name : '',
-			'total'           => Catalog::money( (int) ( $quote['total_cents'] ?? 0 ) ),
-			'deposit'         => Catalog::money( (int) ( $quote['deposit_cents'] ?? 0 ) ),
-			'line_items'      => json_decode( (string) ( $quote['line_items'] ?? '[]' ), true ),
-			'can_change'      => in_array( $state, array( BookingState::Confirmed, BookingState::Assigned ), true ),
-			'can_cancel'      => $state->can_go_to( BookingState::Cancelled ),
+			'total'           => Pricing::money( $total ),
+			'deposit'         => Pricing::money( $deposit ),
+			'balance'         => Pricing::money( max( 0, $total - $deposit ) ),
+			'paid'            => (int) $booking['order_id'] > 0,
+			'refund'          => BookingView::refund_label( $booking ),
+			'line_items'      => array_map(
+				static fn( array $line ): array => array(
+					'label'  => (string) $line['label'],
+					'amount' => Pricing::money( (int) $line['cents'] ),
+				),
+				is_array( $lines ) ? array_filter( $lines, 'is_array' ) : array()
+			),
+			'can_change'      => in_array( $state, array( BookingState::Requested, BookingState::Confirmed ), true ),
+			'can_cancel'      => $state->can_go_to( BookingState::Cancelled ) && BookingState::Quote !== $state,
+			'refundable'      => Refunds::is_refundable( $booking ),
 		);
 	}
 }

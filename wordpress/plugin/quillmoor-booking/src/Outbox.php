@@ -52,12 +52,14 @@ final class Outbox {
 			: array(
 				'event'      => $event,
 				'booking_id' => $booking_id,
-				'ref'        => 'QHS-' . $booking_id,
+				'ref'        => 'QM-' . $booking_id,
 				'state'      => (string) $booking['state'],
 				'version'    => (int) $booking['version'],
-				'area'       => (string) $booking['area'],
-				'service'    => (string) $booking['service'],
-				'skill'      => Catalog::skill( (string) $booking['service'] ),
+				'type'       => (string) $booking['listing_type'],
+				'listing_id' => (int) $booking['listing_id'],
+				'area'       => Listings\Locations::zone( (string) $booking['location'] ),
+				'skill'      => 'dining' === (string) $booking['listing_type'] ? 'none' : 'cleaning',
+				'dispatch'   => 'dining' !== (string) $booking['listing_type'],
 				'slot_start' => $booking['slot_start'],
 				'has_note'   => '' !== (string) $booking['customer_note'],
 			);

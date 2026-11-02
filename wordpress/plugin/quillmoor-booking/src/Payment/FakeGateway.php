@@ -30,7 +30,7 @@ final class FakeGateway extends WC_Payment_Gateway {
 		$this->title              = 'Fake test gateway (not Stripe, no money moves)';
 		$this->description        = 'Local test mode. No card is taken.';
 		$this->has_fields         = false;
-		$this->supports           = array( 'products' );
+		$this->supports           = array( 'products', 'refunds' );
 		$this->enabled            = 'fake' === Config::payment_mode() ? 'yes' : 'no';
 	}
 
@@ -57,5 +57,17 @@ final class FakeGateway extends WC_Payment_Gateway {
 			'result'   => 'success',
 			'redirect' => $this->get_return_url( $order ),
 		);
+	}
+
+	/**
+	 * Record a refund. No money moved, so there is nothing to send back.
+	 *
+	 * @param int        $order_id Order id.
+	 * @param float|null $amount   Amount.
+	 * @param string     $reason   Reason.
+	 * @return bool
+	 */
+	public function process_refund( $order_id, $amount = null, $reason = '' ) {
+		return $this->is_available();
 	}
 }

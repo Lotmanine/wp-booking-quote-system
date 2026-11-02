@@ -13,13 +13,14 @@ FROM wordpress:7.1.4-php8.5-apache
 ARG WOOCOMMERCE_VERSION=11.2.1
 ARG STRIPE_GATEWAY_VERSION=11.1.1
 ARG FLUENT_CRM_VERSION=3.3.1
+ARG SCF_VERSION=6.9.7
 
 RUN set -eux; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends unzip; \
 	rm -rf /var/lib/apt/lists/*; \
 	cd /usr/src/wordpress/wp-content/plugins; \
-	for pair in "woocommerce.${WOOCOMMERCE_VERSION}" "woocommerce-gateway-stripe.${STRIPE_GATEWAY_VERSION}" "fluent-crm.${FLUENT_CRM_VERSION}"; do \
+	for pair in "woocommerce.${WOOCOMMERCE_VERSION}" "woocommerce-gateway-stripe.${STRIPE_GATEWAY_VERSION}" "fluent-crm.${FLUENT_CRM_VERSION}" "secure-custom-fields.${SCF_VERSION}"; do \
 		curl -fsSL --retry 6 --retry-all-errors --retry-delay 3 -o /tmp/p.zip "https://downloads.wordpress.org/plugin/${pair}.zip"; \
 		unzip -q /tmp/p.zip; \
 		rm /tmp/p.zip; \

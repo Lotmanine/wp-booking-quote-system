@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name:       Quillmoor Booking
- * Description:       Instant quotes, slot holds, deposits, dispatch and portals for the fictional Quillmoor Home Services demo.
- * Version:           1.0.0
+ * Description:       Stays and table bookings with holds, deposits, host tools and guest trips for the fictional Quillmoor demo.
+ * Version:           2.0.0
  * Requires at least: 7.0
  * Requires PHP:      8.3
- * Requires Plugins:  woocommerce
+ * Requires Plugins:  woocommerce, secure-custom-fields
  * Author:            Lotfi O.
  * License:           GPL-2.0-or-later
  * Text Domain:       quillmoor-booking
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 define( 'QUILLMOOR_PLUGIN_FILE', __FILE__ );
 define( 'QUILLMOOR_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'QUILLMOOR_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'QUILLMOOR_VERSION', '1.0.0' );
+define( 'QUILLMOOR_VERSION', '2.0.0' );
 
 require_once QUILLMOOR_PLUGIN_DIR . 'vendor/autoload.php';
 

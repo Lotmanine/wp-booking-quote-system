@@ -7,9 +7,9 @@
 
 namespace Quillmoor\Booking\Mail;
 
-use Quillmoor\Booking\Catalog;
 use Quillmoor\Booking\Config;
 use Quillmoor\Booking\Db;
+use Quillmoor\Booking\Domain\BookingView;
 use Quillmoor\Booking\Pdf\PdfRenderer;
 use Quillmoor\Booking\Security\BookingPolicy;
 use Quillmoor\Booking\Security\Counters;
@@ -63,7 +63,7 @@ final class MailService {
 				'verify_expires_at' => Db::now( DAY_IN_SECONDS ),
 			)
 		);
-		$url  = add_query_arg( 'verify', $token, home_url( '/portal/' ) );
+		$url  = add_query_arg( 'verify', $token, home_url( '/trips/' ) );
 		$html = '<p>Please confirm this address so we can send your booking updates.</p><p><a href="' . esc_url( $url ) . '">Confirm my email</a></p>' . $this->footer();
 		return $this->deliver( $customer, 'verify', 0, 'Confirm your email (demo)', $html );
 	}
@@ -78,12 +78,11 @@ final class MailService {
 		if ( null === $customer ) {
 			return 'failed';
 		}
-		$html = '<p>Your demo booking ' . esc_html( 'QHS-' . $booking['id'] ) . ' is confirmed for ' . esc_html( (string) $booking['slot_start'] ) . ' UTC.</p>'
-			. '<p><a href="' . esc_url( self::portal_link( $booking ) ) . '">View your booking</a></p>' . $this->footer();
+		$html = $this->summary( $booking, 'Your demo booking is confirmed.' );
 
 		$attachment = array(
 			array(
-				'name'    => 'booking-QHS-' . $booking['id'] . '.pdf',
+				'name'    => 'booking-' . BookingView::ref( $booking ) . '.pdf',
 				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Brevo requires base64 attachments.
 				'content' => base64_encode( PdfRenderer::confirmation( $booking ) ),
 			),
@@ -92,7 +91,35 @@ final class MailService {
 	}
 
 	/**
-	 * Send a pre-visit reminder.
+	 * Tell the guest the host has the request and answers within the response window.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 */
+	public function send_request_received( array $booking ): string {
+		$customer = Services::bookings()->customer( (int) $booking['customer_id'] );
+		if ( null === $customer ) {
+			return 'failed';
+		}
+		$html = $this->summary( $booking, 'Your deposit was received and the host has your request. They answer within ' . Config::REQUEST_HOURS . ' hours; if they do not, the request is declined and the deposit refunded.' );
+		return $this->deliver( $customer, 'request', (int) $booking['id'], 'Request sent to the host (demo)', $html );
+	}
+
+	/**
+	 * Tell the guest the host declined.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 */
+	public function send_declined( array $booking ): string {
+		$customer = Services::bookings()->customer( (int) $booking['customer_id'] );
+		if ( null === $customer ) {
+			return 'failed';
+		}
+		$html = $this->summary( $booking, 'The host could not accept this request. Any deposit you paid will be refunded.' );
+		return $this->deliver( $customer, 'declined', (int) $booking['id'], 'Request declined (demo)', $html );
+	}
+
+	/**
+	 * Send a reminder before arrival.
 	 *
 	 * @param array<string,mixed> $booking Booking row.
 	 */
@@ -101,13 +128,12 @@ final class MailService {
 		if ( null === $customer ) {
 			return 'failed';
 		}
-		$html = '<p>Reminder: ' . esc_html( Catalog::label( 'services', (string) $booking['service'] ) ) . ' at ' . esc_html( (string) $booking['slot_start'] ) . ' UTC.</p>'
-			. '<p><a href="' . esc_url( self::portal_link( $booking ) ) . '">View or change your booking</a></p>' . $this->footer();
-		return $this->deliver( $customer, 'reminder', (int) $booking['id'], 'Your visit is coming up (demo)', $html );
+		$html = $this->summary( $booking, BookingView::is_dining( $booking ) ? 'Your table is coming up.' : 'Your stay is coming up.' );
+		return $this->deliver( $customer, 'reminder', (int) $booking['id'], 'Coming up soon (demo)', $html );
 	}
 
 	/**
-	 * Send the post-completion follow-up.
+	 * Send the follow-up after a stay or a meal.
 	 *
 	 * @param array<string,mixed> $booking Booking row.
 	 */
@@ -116,8 +142,22 @@ final class MailService {
 		if ( null === $customer ) {
 			return 'failed';
 		}
-		$html = '<p>Your demo job is complete. Thank you for trying Quillmoor Home Services.</p>' . $this->footer();
-		return $this->deliver( $customer, 'followup', (int) $booking['id'], 'How did it go? (demo)', $html );
+		$html = '<p>Thank you for trying the Quillmoor demo. Nothing was really booked and no money moved.</p>' . $this->footer();
+		return $this->deliver( $customer, 'followup', (int) $booking['id'], 'Thanks for trying the demo', $html );
+	}
+
+	/**
+	 * Booking summary block for a message.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 * @param string              $lead    Opening sentence.
+	 */
+	private function summary( array $booking, string $lead ): string {
+		return '<p>' . esc_html( $lead ) . '</p>'
+			. '<p><strong>' . esc_html( BookingView::listing_title( $booking ) ) . '</strong><br>'
+			. esc_html( BookingView::when( $booking ) ) . '<br>'
+			. esc_html( 'Reference ' . BookingView::ref( $booking ) ) . '</p>'
+			. '<p><a href="' . esc_url( self::portal_link( $booking ) ) . '">View your booking</a></p>' . $this->footer();
 	}
 
 	/**
@@ -131,7 +171,7 @@ final class MailService {
 				'booking' => (int) $booking['id'],
 				'token'   => BookingPolicy::token_for( $booking ),
 			),
-			home_url( '/portal/' )
+			home_url( '/trips/' )
 		);
 	}
 
@@ -184,7 +224,7 @@ final class MailService {
 	 * Footer on every message.
 	 */
 	private function footer(): string {
-		return '<p style="color:#666;font-size:12px">Demo: fictional company, no real services or payments.</p>';
+		return '<p style="color:#666;font-size:12px">Demo: fictional places, no real bookings or payments.</p>';
 	}
 
 	/**

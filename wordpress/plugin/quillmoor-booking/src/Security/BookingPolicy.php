@@ -17,6 +17,7 @@ defined( 'ABSPATH' ) || exit;
 final class BookingPolicy {
 
 	public const CAP_MANAGE = 'qhs_manage_bookings';
+	public const CAP_HOST   = 'qhs_host_bookings';
 	public const CAP_WORK   = 'qhs_work_jobs';
 
 	/**
@@ -66,6 +67,18 @@ final class BookingPolicy {
 	}
 
 	/**
+	 * Whether the actor hosts the listing of the booking.
+	 *
+	 * @param Actor               $actor   Requester.
+	 * @param array<string,mixed> $booking Booking row.
+	 */
+	public function is_host( Actor $actor, array $booking ): bool {
+		return $actor->user_id > 0
+			&& (int) $booking['host_user_id'] === $actor->user_id
+			&& user_can( $actor->user_id, self::CAP_HOST );
+	}
+
+	/**
 	 * Whether the actor manages all bookings.
 	 *
 	 * @param Actor $actor Requester.
@@ -81,11 +94,11 @@ final class BookingPolicy {
 	 * @param array<string,mixed> $booking Booking row.
 	 */
 	public function can_view( Actor $actor, array $booking ): bool {
-		return $this->is_owner( $actor, $booking ) || $this->is_assigned_staff( $actor, $booking ) || $this->is_manager( $actor );
+		return $this->is_owner( $actor, $booking ) || $this->is_host( $actor, $booking ) || $this->is_assigned_staff( $actor, $booking ) || $this->is_manager( $actor );
 	}
 
 	/**
-	 * Reschedule or cancel access.
+	 * Guest-side change or cancel access.
 	 *
 	 * @param Actor               $actor   Requester.
 	 * @param array<string,mixed> $booking Booking row.
@@ -95,12 +108,28 @@ final class BookingPolicy {
 	}
 
 	/**
-	 * Job status access.
+	 * Host-side access: confirm, decline, check in, cancel, refund and notes.
 	 *
 	 * @param Actor               $actor   Requester.
 	 * @param array<string,mixed> $booking Booking row.
 	 */
-	public function can_work( Actor $actor, array $booking ): bool {
-		return $this->is_assigned_staff( $actor, $booking ) || $this->is_manager( $actor );
+	public function can_manage( Actor $actor, array $booking ): bool {
+		return $this->is_host( $actor, $booking ) || $this->is_manager( $actor );
+	}
+
+	/**
+	 * Whether a user may manage a listing's calendar and bookings.
+	 *
+	 * @param int $user_id    User id.
+	 * @param int $listing_id Listing id.
+	 */
+	public static function can_manage_listing( int $user_id, int $listing_id ): bool {
+		if ( $user_id < 1 ) {
+			return false;
+		}
+		if ( user_can( $user_id, self::CAP_MANAGE ) ) {
+			return true;
+		}
+		return user_can( $user_id, self::CAP_HOST ) && (int) get_post_field( 'post_author', $listing_id ) === $user_id;
 	}
 }

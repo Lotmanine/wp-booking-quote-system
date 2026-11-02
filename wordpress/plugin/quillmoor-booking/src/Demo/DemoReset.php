@@ -21,15 +21,15 @@ defined( 'ABSPATH' ) || exit;
 final class DemoReset {
 
 	public const CUSTOMER_LOGIN = 'demo-customer';
-	public const STAFF_LOGIN    = 'demo-staff';
+	public const HOST_LOGIN     = 'demo-host';
 	public const MANAGER_LOGIN  = 'demo-admin';
 
 	/**
-	 * Staff roster, matching the dispatch service seed.
+	 * Turnover team roster, matching the dispatch service seed. These accounts never sign in.
 	 */
 	private const STAFF = array(
 		array(
-			'login' => self::STAFF_LOGIN,
+			'login' => 'staff-rowan',
 			'name'  => 'Rowan Vale',
 			'ref'   => 'rowan',
 		),
@@ -48,7 +48,7 @@ final class DemoReset {
 	/**
 	 * Tables that hold only demo activity. Counters stay, so a reset cannot refill the email cap.
 	 */
-	private const TABLES = array( 'slot_claims', 'booking_history', 'outbox', 'triage', 'mail_log', 'alerts', 'bookings', 'quotes', 'customers' );
+	private const TABLES = array( 'night_claims', 'table_slots', 'table_claims', 'day_closures', 'booking_notes', 'booking_history', 'outbox', 'triage', 'mail_log', 'alerts', 'bookings', 'quotes', 'customers' );
 
 	/**
 	 * Whether a reset may run here.
@@ -86,8 +86,17 @@ final class DemoReset {
 		foreach ( self::TABLES as $table ) {
 			$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', Db::table( $table ) ) );
 		}
-		self::ensure_accounts();
+		$guest = self::ensure_accounts();
+		Seeder::run( true );
+		Seeder::sample_activity( $guest );
 		self::reset_dispatch();
+	}
+
+	/**
+	 * The shared demo password.
+	 */
+	public static function demo_password(): string {
+		return Config::get( 'QHS_DEMO_PASSWORD' );
 	}
 
 	/**
@@ -116,10 +125,13 @@ final class DemoReset {
 	}
 
 	/**
-	 * Create or restore demo accounts and their customer record.
+	 * Create or restore demo accounts and their customer records.
+	 *
+	 * @return int Customer row of the fictional guest used for sample bookings.
 	 */
-	public static function ensure_accounts(): void {
-		$password = Config::get( 'QHS_DEMO_PASSWORD' );
+	public static function ensure_accounts(): int {
+		global $wpdb;
+		$password = self::demo_password();
 
 		$customer_id = self::ensure_user( self::CUSTOMER_LOGIN, 'Avery Demo', 'demo-customer@example.com', Roles::CUSTOMER, $password );
 		$manager_id  = self::ensure_user( self::MANAGER_LOGIN, 'Demo Manager', 'demo-admin@example.com', Roles::MANAGER, $password );
@@ -127,14 +139,17 @@ final class DemoReset {
 		update_user_meta( $manager_id, DemoGuard::META, '1' );
 
 		foreach ( self::STAFF as $staff ) {
-			// Only the public staff login uses the shared password.
-			$pass = self::STAFF_LOGIN === $staff['login'] ? $password : wp_generate_password( 32 );
-			$id   = self::ensure_user( $staff['login'], $staff['name'], $staff['login'] . '@example.com', Roles::STAFF, $pass );
+			$id = self::ensure_user( $staff['login'], $staff['name'], $staff['login'] . '@example.com', Roles::STAFF, wp_generate_password( 32 ) );
 			update_user_meta( $id, DemoGuard::META, '1' );
 			update_user_meta( $id, 'qhs_staff_ref', $staff['ref'] );
 		}
+		// The former public staff login is gone; hosts replaced it.
+		$old = get_user_by( 'login', 'demo-staff' );
+		if ( $old ) {
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+			wp_delete_user( $old->ID );
+		}
 
-		global $wpdb;
 		$wpdb->insert(
 			Db::table( 'customers' ),
 			array(
@@ -145,6 +160,17 @@ final class DemoReset {
 				'created_at'        => Db::now(),
 			)
 		);
+		$wpdb->insert(
+			Db::table( 'customers' ),
+			array(
+				'user_id'           => 0,
+				'email'             => 'sample-guest@example.com',
+				'full_name'         => 'Jules Moreno (sample guest)',
+				'email_verified_at' => Db::now(),
+				'created_at'        => Db::now(),
+			)
+		);
+		return (int) $wpdb->insert_id;
 	}
 
 	/**
@@ -156,7 +182,7 @@ final class DemoReset {
 	 * @param string $role     Role.
 	 * @param string $password Password.
 	 */
-	private static function ensure_user( string $login, string $name, string $email, string $role, string $password ): int {
+	public static function ensure_user( string $login, string $name, string $email, string $role, string $password ): int {
 		$user = get_user_by( 'login', $login );
 		$data = array(
 			'user_login'   => $login,

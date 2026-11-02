@@ -36,6 +36,7 @@ final class PortalApi {
 			array(
 				'bookings'          => array_map( array( Respond::class, 'booking' ), $rows ),
 				'marketing_consent' => null !== $customer && (bool) $customer['marketing_consent'],
+				'name'              => null === $customer ? '' : (string) $customer['full_name'],
 			)
 		);
 	}
@@ -50,23 +51,36 @@ final class PortalApi {
 		if ( $booking instanceof WP_Error ) {
 			return $booking;
 		}
-		return new WP_REST_Response(
-			Respond::booking( $booking ) + array( 'history' => Services::bookings()->history( (int) $booking['id'] ) )
+		$history = array_map(
+			static fn( array $row ): array => array(
+				'to'    => BookingState::from( (string) $row['to_state'] )->label( (string) $booking['listing_type'] ),
+				'note'  => (string) $row['reason'],
+				'at'    => (string) $row['created_at'],
+				'state' => (string) $row['to_state'],
+			),
+			Services::bookings()->history( (int) $booking['id'] )
 		);
+		return new WP_REST_Response( Respond::booking( $booking ) + array( 'history' => $history ) );
 	}
 
 	/**
-	 * Move a booking.
+	 * Move a booking to other dates or another time.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 */
-	public static function reschedule( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+	public static function change( WP_REST_Request $request ): WP_REST_Response|WP_Error {
 		$booking = Respond::viewable_for_change( $request, (int) $request['id'] );
 		if ( $booking instanceof WP_Error ) {
 			return $booking;
 		}
 		try {
-			$moved = Services::service()->reschedule( (int) $booking['id'], sanitize_text_field( (string) $request->get_param( 'slot_start' ) ), Respond::actor( $request )->label() );
+			$moved = Services::service()->change_dates(
+				(int) $booking['id'],
+				sanitize_text_field( (string) $request->get_param( 'check_in' ) ),
+				sanitize_text_field( (string) $request->get_param( 'check_out' ) ),
+				sanitize_text_field( (string) $request->get_param( 'slot_start' ) ),
+				Respond::actor( $request )->label()
+			);
 		} catch ( BookingError $e ) {
 			return Respond::from( $e );
 		}
@@ -109,7 +123,7 @@ final class PortalApi {
 		$pdf = 'quote' === $kind ? PdfRenderer::quote( $booking ) : PdfRenderer::confirmation( $booking );
 
 		header( 'Content-Type: application/pdf' );
-		header( 'Content-Disposition: attachment; filename="' . $kind . '-QHS-' . (int) $booking['id'] . '.pdf"' );
+		header( 'Content-Disposition: attachment; filename="' . $kind . '-QM-' . (int) $booking['id'] . '.pdf"' );
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Cache-Control: private, no-store' );
 		echo $pdf; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Binary PDF.

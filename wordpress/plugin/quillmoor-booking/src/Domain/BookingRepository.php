@@ -12,7 +12,7 @@ use Quillmoor\Booking\Db;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Reads and writes booking, quote and customer rows.
+ * Reads and writes booking, quote, customer and note rows.
  */
 final class BookingRepository {
 
@@ -74,6 +74,17 @@ final class BookingRepository {
 	}
 
 	/**
+	 * Update a quote, used when dates change.
+	 *
+	 * @param int                 $id   Quote id.
+	 * @param array<string,mixed> $data Column values.
+	 */
+	public function update_quote( int $id, array $data ): void {
+		global $wpdb;
+		$wpdb->update( Db::table( 'quotes' ), $data, array( 'id' => $id ) );
+	}
+
+	/**
 	 * Find a customer.
 	 *
 	 * @param int $id Customer id.
@@ -111,7 +122,7 @@ final class BookingRepository {
 
 	/**
 	 * Create or refresh a customer row. Racing inserts converge on the unique email, and a
-	 * verified row keeps its name because anyone can type any address into the wizard.
+	 * verified row keeps its name because anyone can type any address into the form.
 	 *
 	 * @param string $email     Lowercase address.
 	 * @param string $full_name Display name.
@@ -154,89 +165,173 @@ final class BookingRepository {
 	public function for_customer( int $customer_id ): array {
 		global $wpdb;
 		return (array) $wpdb->get_results(
-			$wpdb->prepare( 'SELECT * FROM %i WHERE customer_id = %d ORDER BY id DESC LIMIT 50', Db::table( 'bookings' ), $customer_id ),
+			$wpdb->prepare( 'SELECT * FROM %i WHERE customer_id = %d AND state <> %s ORDER BY slot_start DESC, id DESC LIMIT 100', Db::table( 'bookings' ), $customer_id, BookingState::Quote->value ),
 			ARRAY_A
 		);
 	}
 
 	/**
-	 * Active jobs for a staff member.
+	 * Bookings a host or staff member handles: listings they own, or bookings assigned to them.
 	 *
-	 * @param int $user_id Staff user id.
+	 * @param int      $user_id User id.
+	 * @param string[] $states  States to include, or every state when empty.
+	 * @param int      $limit   Page size.
 	 * @return array<int,array<string,mixed>>
 	 */
-	public function for_staff( int $user_id ): array {
+	public function for_host( int $user_id, array $states = array(), int $limit = 200 ): array {
+		return $this->listing_query( '(b.host_user_id = %d OR b.staff_user_id = %d)', array( $user_id, $user_id ), $states, $limit, 0, 'b.slot_start ASC' )['rows'];
+	}
+
+	/**
+	 * Bookings of one listing that hold nights or seats in a range, for calendars.
+	 *
+	 * @param int    $listing_id Listing id.
+	 * @param string $from       First day.
+	 * @param string $to         Last day.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function for_listing_between( int $listing_id, string $from, string $to ): array {
 		global $wpdb;
 		return (array) $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM %i WHERE staff_user_id = %d AND state IN (%s, %s) ORDER BY slot_start ASC LIMIT 100',
+				'SELECT b.*, c.full_name, c.email FROM %i b JOIN %i c ON c.id = b.customer_id
+				WHERE b.listing_id = %d AND b.state IN (%s, %s, %s, %s, %s, %s)
+				AND b.slot_start <= %s AND COALESCE(b.slot_end, b.slot_start) >= %s
+				ORDER BY b.slot_start ASC',
 				Db::table( 'bookings' ),
-				$user_id,
-				BookingState::Assigned->value,
+				Db::table( 'customers' ),
+				$listing_id,
+				BookingState::Hold->value,
+				BookingState::DepositPaid->value,
+				BookingState::Requested->value,
+				BookingState::Confirmed->value,
+				BookingState::Arrived->value,
+				BookingState::Completed->value,
+				$to . ' 23:59:59',
+				$from . ' 00:00:00'
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Bookings with a start inside a range, for every listing.
+	 *
+	 * @param string $from    Inclusive start.
+	 * @param string $to      Exclusive end.
+	 * @param int    $host_id Limit to one host, or 0 for all.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function in_range( string $from, string $to, int $host_id = 0 ): array {
+		global $wpdb;
+		$rows = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT b.*, c.full_name, p.post_title AS listing_title FROM %i b JOIN %i c ON c.id = b.customer_id LEFT JOIN %i p ON p.ID = b.listing_id
+				WHERE b.slot_start >= %s AND b.slot_start < %s AND b.state IN (%s, %s, %s, %s) ORDER BY b.slot_start ASC',
+				Db::table( 'bookings' ),
+				Db::table( 'customers' ),
+				$wpdb->posts,
+				$from,
+				$to,
+				BookingState::Requested->value,
+				BookingState::Confirmed->value,
+				BookingState::Arrived->value,
 				BookingState::Completed->value
 			),
 			ARRAY_A
 		);
-	}
-
-	/**
-	 * Bookings with a slot inside a range.
-	 *
-	 * @param string $from Inclusive start.
-	 * @param string $to   Exclusive end.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public function in_range( string $from, string $to ): array {
-		global $wpdb;
-		return (array) $wpdb->get_results(
-			$wpdb->prepare(
-				'SELECT * FROM %i WHERE slot_start >= %s AND slot_start < %s AND state NOT IN (%s, %s) ORDER BY slot_start ASC',
-				Db::table( 'bookings' ),
-				$from,
-				$to,
-				BookingState::Cancelled->value,
-				BookingState::Quote->value
-			),
-			ARRAY_A
+		if ( $host_id < 1 ) {
+			return $rows;
+		}
+		return array_values(
+			array_filter(
+				$rows,
+				static fn( array $row ): bool => (int) $row['host_user_id'] === $host_id || (int) $row['staff_user_id'] === $host_id
+			)
 		);
 	}
 
 	/**
-	 * Admin list: newest first, filtered by state and a search on reference, email or name.
+	 * Admin and host list, filtered. Newest first, or by arrival when a date range is given.
 	 *
-	 * @param string $state  State value, or an empty string for every state.
-	 * @param string $term   Search text.
-	 * @param int    $limit  Page size.
-	 * @param int    $offset Rows to skip.
+	 * @param array{state?:string,term?:string,host_id?:int,listing_id?:int,type?:string,from?:string,to?:string} $filters Filters.
+	 * @param int                                                                                                  $limit   Page size.
+	 * @param int                                                                                                  $offset  Rows to skip.
 	 * @return array{rows: array<int,array<string,mixed>>, total: int}
 	 */
-	public function search( string $state, string $term, int $limit, int $offset ): array {
+	public function search( array $filters, int $limit, int $offset ): array {
 		global $wpdb;
-		$where = array( '1 = 1' );
-		$args  = array( Db::table( 'bookings' ), Db::table( 'customers' ), Db::table( 'quotes' ) );
-		if ( '' !== $state ) {
-			$where[] = 'b.state = %s';
-			$args[]  = $state;
+		$where = array( 'b.state <> %s' );
+		$args  = array( BookingState::Quote->value );
+		$host  = (int) ( $filters['host_id'] ?? 0 );
+		if ( $host > 0 ) {
+			$where[] = '(b.host_user_id = %d OR b.staff_user_id = %d)';
+			$args[]  = $host;
+			$args[]  = $host;
 		}
-		$term = trim( $term );
-		if ( 1 === preg_match( '/^(?:qhs-?)?(\d+)$/i', $term, $match ) ) {
+		if ( (int) ( $filters['listing_id'] ?? 0 ) > 0 ) {
+			$where[] = 'b.listing_id = %d';
+			$args[]  = (int) $filters['listing_id'];
+		}
+		if ( in_array( $filters['type'] ?? '', array( 'stay', 'dining' ), true ) ) {
+			$where[] = 'b.listing_type = %s';
+			$args[]  = (string) $filters['type'];
+		}
+		$order = 'b.id DESC';
+		if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}$/', (string) ( $filters['from'] ?? '' ) ) ) {
+			$where[] = 'b.slot_start >= %s';
+			$args[]  = $filters['from'] . ' 00:00:00';
+			$order   = 'b.slot_start ASC';
+		}
+		if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}$/', (string) ( $filters['to'] ?? '' ) ) ) {
+			$where[] = 'b.slot_start <= %s';
+			$args[]  = $filters['to'] . ' 23:59:59';
+			$order   = 'b.slot_start ASC';
+		}
+		$term = trim( (string) ( $filters['term'] ?? '' ) );
+		if ( 1 === preg_match( '/^(?:qm-?)?(\d+)$/i', $term, $match ) ) {
 			$where[] = 'b.id = %d';
 			$args[]  = (int) $match[1];
 		} elseif ( '' !== $term ) {
 			$like    = '%' . $wpdb->esc_like( $term ) . '%';
-			$where[] = '(c.email LIKE %s OR c.full_name LIKE %s)';
+			$where[] = '(c.email LIKE %s OR c.full_name LIKE %s OR p.post_title LIKE %s)';
+			$args[]  = $like;
 			$args[]  = $like;
 			$args[]  = $like;
 		}
-		$from = 'FROM %i b JOIN %i c ON c.id = b.customer_id LEFT JOIN %i q ON q.id = b.quote_id WHERE ' . implode( ' AND ', $where );
+		$state  = (string) ( $filters['state'] ?? '' );
+		$states = '' === $state ? array() : ( 'upcoming' === $state ? array( BookingState::Requested->value, BookingState::Confirmed->value, BookingState::DepositPaid->value ) : array( $state ) );
+		return $this->listing_query( implode( ' AND ', $where ), $args, $states, $limit, $offset, $order );
+	}
+
+	/**
+	 * Shared paged query joining the customer, quote and listing title.
+	 *
+	 * @param string           $where  Fixed SQL fragment with placeholders.
+	 * @param array<int,mixed> $args   Placeholder values.
+	 * @param string[]         $states States, or all when empty.
+	 * @param int              $limit  Page size.
+	 * @param int              $offset Rows to skip.
+	 * @param string           $order  Fixed ORDER BY fragment.
+	 * @return array{rows: array<int,array<string,mixed>>, total: int}
+	 */
+	private function listing_query( string $where, array $args, array $states, int $limit, int $offset, string $order ): array {
+		global $wpdb;
+		if ( array() !== $states ) {
+			$where .= ' AND b.state IN (' . implode( ', ', array_fill( 0, count( $states ), '%s' ) ) . ')';
+			$args   = array_merge( $args, array_values( $states ) );
+		}
+		$tables = array( Db::table( 'bookings' ), Db::table( 'customers' ), Db::table( 'quotes' ), $wpdb->posts );
+		$from   = 'FROM %i b JOIN %i c ON c.id = b.customer_id LEFT JOIN %i q ON q.id = b.quote_id LEFT JOIN %i p ON p.ID = b.listing_id WHERE ' . $where;
+		$order  = in_array( $order, array( 'b.id DESC', 'b.slot_start ASC' ), true ) ? $order : 'b.id DESC';
 
 		// The WHERE clause is built from fixed fragments with placeholders, so the sniffs cannot count them.
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
-		$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) {$from}", $args ) );
+		$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) {$from}", array_merge( $tables, $args ) ) );
 		$rows  = (array) $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT b.*, c.full_name, c.email, q.total_cents {$from} ORDER BY b.id DESC LIMIT %d OFFSET %d",
-				array_merge( $args, array( $limit, $offset ) )
+				"SELECT b.*, c.full_name, c.email, q.total_cents, q.deposit_cents, q.line_items, p.post_title AS listing_title, p.post_author AS listing_author {$from} ORDER BY {$order} LIMIT %d OFFSET %d",
+				array_merge( $tables, $args, array( $limit, $offset ) )
 			),
 			ARRAY_A
 		);
@@ -250,16 +345,19 @@ final class BookingRepository {
 	/**
 	 * Number of bookings per state.
 	 *
+	 * @param int $host_id Limit to one host, or 0 for all.
 	 * @return array<string,int>
 	 */
-	public function state_counts(): array {
+	public function state_counts( int $host_id = 0 ): array {
 		global $wpdb;
-		$rows = (array) $wpdb->get_results(
-			$wpdb->prepare( 'SELECT state, COUNT(*) AS total FROM %i GROUP BY state', Db::table( 'bookings' ) ),
-			ARRAY_A
-		);
+		$rows = $host_id > 0
+			? $wpdb->get_results(
+				$wpdb->prepare( 'SELECT state, COUNT(*) AS total FROM %i WHERE host_user_id = %d OR staff_user_id = %d GROUP BY state', Db::table( 'bookings' ), $host_id, $host_id ),
+				ARRAY_A
+			)
+			: $wpdb->get_results( $wpdb->prepare( 'SELECT state, COUNT(*) AS total FROM %i GROUP BY state', Db::table( 'bookings' ) ), ARRAY_A );
 		$out  = array();
-		foreach ( $rows as $row ) {
+		foreach ( (array) $rows as $row ) {
 			$out[ (string) $row['state'] ] = (int) $row['total'];
 		}
 		return $out;
@@ -280,6 +378,25 @@ final class BookingRepository {
 				BookingState::Hold->value,
 				Db::now(),
 				$limit
+			)
+		);
+		return array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Requests left unanswered past the deadline.
+	 *
+	 * @param int $hours Response window.
+	 * @return int[]
+	 */
+	public function stale_request_ids( int $hours ): array {
+		global $wpdb;
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT id FROM %i WHERE state = %s AND requested_at < %s LIMIT 100',
+				Db::table( 'bookings' ),
+				BookingState::Requested->value,
+				Db::now( -1 * $hours * HOUR_IN_SECONDS )
 			)
 		);
 		return array_map( 'intval', $ids );
@@ -314,6 +431,102 @@ final class BookingRepository {
 		return (array) $wpdb->get_results(
 			$wpdb->prepare( 'SELECT from_state, to_state, actor, reason, created_at FROM %i WHERE booking_id = %d ORDER BY id ASC', Db::table( 'booking_history' ), $booking_id ),
 			ARRAY_A
+		);
+	}
+
+	/**
+	 * Record a history line that is not a state change.
+	 *
+	 * @param int    $booking_id Booking id.
+	 * @param string $state      Current state, written as both ends.
+	 * @param string $actor      Actor label.
+	 * @param string $reason     What happened.
+	 */
+	public function log( int $booking_id, string $state, string $actor, string $reason ): void {
+		global $wpdb;
+		$wpdb->insert(
+			Db::table( 'booking_history' ),
+			array(
+				'booking_id' => $booking_id,
+				'from_state' => $state,
+				'to_state'   => $state,
+				'actor'      => substr( $actor, 0, 40 ),
+				'reason'     => substr( $reason, 0, 190 ),
+				'created_at' => Db::now(),
+			)
+		);
+	}
+
+	/**
+	 * Internal notes on a booking, oldest first.
+	 *
+	 * @param int $booking_id Booking id.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function notes( int $booking_id ): array {
+		global $wpdb;
+		return (array) $wpdb->get_results(
+			$wpdb->prepare( 'SELECT id, author_id, body, created_at FROM %i WHERE booking_id = %d ORDER BY id ASC', Db::table( 'booking_notes' ), $booking_id ),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Add an internal note.
+	 *
+	 * @param int    $booking_id Booking id.
+	 * @param int    $author_id  Author.
+	 * @param string $body       Plain text.
+	 */
+	public function add_note( int $booking_id, int $author_id, string $body ): int {
+		global $wpdb;
+		$wpdb->insert(
+			Db::table( 'booking_notes' ),
+			array(
+				'booking_id' => $booking_id,
+				'author_id'  => $author_id,
+				'body'       => $body,
+				'created_at' => Db::now(),
+			)
+		);
+		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Deposits taken on bookings that are still live or finished, in cents.
+	 *
+	 * @param int $host_id Limit to one host, or 0 for all.
+	 */
+	public function deposits_cents( int $host_id = 0 ): int {
+		global $wpdb;
+		$states = array( BookingState::DepositPaid->value, BookingState::Requested->value, BookingState::Confirmed->value, BookingState::Arrived->value, BookingState::Completed->value, BookingState::NoShow->value );
+		return (int) $wpdb->get_var(
+			// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Ten values in one array: two tables, six states, the host twice.
+			$wpdb->prepare(
+				'SELECT COALESCE(SUM(q.deposit_cents), 0) FROM %i b JOIN %i q ON q.id = b.quote_id WHERE b.state IN (%s, %s, %s, %s, %s, %s) AND b.order_id > 0 AND ( %d = 0 OR b.host_user_id = %d )',
+				array_merge( array( Db::table( 'bookings' ), Db::table( 'quotes' ) ), $states, array( $host_id, $host_id ) )
+			)
+		);
+	}
+
+	/**
+	 * Every live booking holding nights or seats on a listing, used before a listing is deleted.
+	 *
+	 * @param int $listing_id Listing id.
+	 */
+	public function live_count_for_listing( int $listing_id ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM %i WHERE listing_id = %d AND state IN (%s, %s, %s, %s, %s)',
+				Db::table( 'bookings' ),
+				$listing_id,
+				BookingState::Hold->value,
+				BookingState::DepositPaid->value,
+				BookingState::Requested->value,
+				BookingState::Confirmed->value,
+				BookingState::Arrived->value
+			)
 		);
 	}
 }

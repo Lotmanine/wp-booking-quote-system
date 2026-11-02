@@ -9,8 +9,8 @@ namespace Quillmoor\Booking\Pdf;
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
-use Quillmoor\Booking\Catalog;
-use Quillmoor\Booking\Domain\BookingState;
+use Quillmoor\Booking\Domain\BookingView;
+use Quillmoor\Booking\Listings\Pricing;
 use Quillmoor\Booking\Services;
 
 defined( 'ABSPATH' ) || exit;
@@ -52,11 +52,10 @@ final class PdfRenderer {
 
 		$rows = '';
 		foreach ( is_array( $lines ) ? $lines : array() as $line ) {
-			$rows .= '<tr><td>' . esc_html( (string) $line['label'] ) . '</td><td class="r">' . esc_html( Catalog::money( (int) $line['cents'] ) ) . '</td></tr>';
+			$rows .= '<tr><td>' . esc_html( (string) $line['label'] ) . '</td><td class="r">' . esc_html( Pricing::money( (int) $line['cents'] ) ) . '</td></tr>';
 		}
 
-		$slot  = (string) ( $booking['slot_start'] ?? '' );
-		$state = BookingState::from( (string) $booking['state'] )->label();
+		$state = BookingView::state_label( $booking );
 
 		$html = '<html><head><meta charset="utf-8"><style>
 			body{font-family:Helvetica,Arial,sans-serif;font-size:12px;color:#1c2b26}
@@ -67,18 +66,18 @@ final class PdfRenderer {
 			.r{text-align:right}
 			.t td{font-weight:bold;border-top:2px solid #14342b}
 			</style></head><body>'
-			. '<div class="banner">Demo: fictional company, no real services or payments. Prices are fictional.</div>'
-			. '<h1>Quillmoor Home Services</h1>'
-			. '<p><strong>' . esc_html( $title ) . '</strong> QHS-' . esc_html( (string) $booking['id'] ) . '</p>'
-			. '<p>Customer: ' . esc_html( (string) ( $customer['full_name'] ?? '' ) ) . '<br>'
-			. 'Area: ' . esc_html( Catalog::label( 'areas', (string) $booking['area'] ) ) . '<br>'
+			. '<div class="banner">Demo: fictional company, no real bookings or payments. Places and prices are fictional.</div>'
+			. '<h1>Quillmoor</h1>'
+			. '<p><strong>' . esc_html( $title ) . '</strong> ' . esc_html( BookingView::ref( $booking ) ) . '</p>'
+			. '<p>Guest: ' . esc_html( (string) ( $customer['full_name'] ?? '' ) ) . '<br>'
+			. 'Place: ' . esc_html( BookingView::listing_title( $booking ) ) . '<br>'
+			. 'When: ' . esc_html( BookingView::when( $booking ) ) . ( BookingView::is_dining( $booking ) ? ' UTC' : '' ) . '<br>'
 			. 'Status: ' . esc_html( $state )
-			. ( '' !== $slot ? '<br>Slot: ' . esc_html( $slot ) . ' UTC' : '' )
 			. ( '' !== $valid_label ? '<br>' . esc_html( $valid_label . (string) ( $quote['valid_until'] ?? '' ) ) . ' UTC' : '' )
 			. '</p>'
 			. '<table><tr><th>Item</th><th class="r">Fictional price</th></tr>' . $rows
-			. '<tr class="t"><td>Total</td><td class="r">' . esc_html( Catalog::money( (int) ( $quote['total_cents'] ?? 0 ) ) ) . '</td></tr>'
-			. '<tr><td>Deposit</td><td class="r">' . esc_html( Catalog::money( (int) ( $quote['deposit_cents'] ?? 0 ) ) ) . '</td></tr></table>'
+			. '<tr class="t"><td>Total</td><td class="r">' . esc_html( Pricing::money( (int) ( $quote['total_cents'] ?? 0 ) ) ) . '</td></tr>'
+			. '<tr><td>Deposit</td><td class="r">' . esc_html( Pricing::money( (int) ( $quote['deposit_cents'] ?? 0 ) ) ) . '</td></tr></table>'
 			. '</body></html>';
 
 		$options = new Options();

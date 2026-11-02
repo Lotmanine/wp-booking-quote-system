@@ -7,14 +7,13 @@
 
 namespace Quillmoor\Booking\Crm;
 
-use Quillmoor\Booking\Catalog;
 use Quillmoor\Booking\Config;
 use Quillmoor\Booking\Domain\BookingRepository;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * A contact carries exactly one stage tag, plus service, area, demo and consent tags.
+ * A contact carries exactly one stage tag, plus type, demo and consent tags.
  */
 final class CrmPipeline {
 
@@ -23,10 +22,13 @@ final class CrmPipeline {
 		'booking.hold'         => 'stage-hold',
 		'booking.hold_expired' => 'stage-quote',
 		'booking.deposit_paid' => 'stage-deposit-paid',
+		'booking.requested'    => 'stage-requested',
 		'booking.confirmed'    => 'stage-confirmed',
 		'booking.rescheduled'  => 'stage-confirmed',
-		'booking.assigned'     => 'stage-assigned',
+		'booking.arrived'      => 'stage-arrived',
 		'booking.completed'    => 'stage-completed',
+		'booking.no_show'      => 'stage-no-show',
+		'booking.declined'     => 'stage-declined',
 		'booking.cancelled'    => 'stage-cancelled',
 	);
 
@@ -52,9 +54,7 @@ final class CrmPipeline {
 			array_unique(
 				array_merge(
 					array_values( self::STAGES ),
-					array( self::CONSENT_TAG, self::DEMO_TAG ),
-					array_map( static fn( $key ) => 'service-' . $key, array_keys( Catalog::all()['services'] ) ),
-					array_map( static fn( $key ) => 'area-' . $key, array_keys( Catalog::all()['areas'] ) )
+					array( self::CONSENT_TAG, self::DEMO_TAG, 'type-stay', 'type-dining' )
 				)
 			)
 		);
@@ -81,7 +81,7 @@ final class CrmPipeline {
 
 		$stage   = self::STAGES[ $event ];
 		$consent = (bool) $customer['marketing_consent'];
-		$add     = array( $stage, 'service-' . $booking['service'], 'area-' . $booking['area'] );
+		$add     = array( $stage, 'type-' . ( 'dining' === $booking['listing_type'] ? 'dining' : 'stay' ) );
 		if ( Config::is_demo_site() ) {
 			$add[] = self::DEMO_TAG;
 		}
