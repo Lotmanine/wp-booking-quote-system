@@ -1,0 +1,17 @@
+{
+  "id": "AoXOmSxBKSj8mGyV",
+  "name": "QHS Booking Follow-up",
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "errorWorkflow": "5qpIqCXYRXAcyTwa" },
+  "nodes": [
+    {"id":"d8dc8ac0-35d3-458e-8ee3-7df63457a6a4","name":"Every Hour","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.3,"position":[240,300],"parameters":{"rule":{"interval":[{"field":"hours","hoursInterval":1}]}}},
+    {"id":"8a5bc8e3-2f05-4bc7-af73-6cec237b66e3","name":"Prepare Follow-up Run","type":"n8n-nodes-base.code","typeVersion":2,"position":[480,300],"parameters":{"mode":"runOnceForAllItems","jsCode":"let nonce = '';\nwhile (nonce.length < 32) { nonce += Math.floor(Math.random() * 16).toString(16); }\nconst hours = Number($env.QHS_FOLLOWUP_HOURS_AFTER ?? 2);\nreturn [{ json: { payload: JSON.stringify({ run_id: String($execution.id), hours_after: hours }), ts: String(Math.floor(Date.now() / 1000)), nonce } }];"}},
+    {"id":"275a4716-06c6-441f-b8ff-843fac6efa49","name":"Sign Follow-up Run","type":"n8n-nodes-base.crypto","typeVersion":1,"position":[720,300],"parameters":{"action":"hmac","type":"SHA256","value":"={{ $json.ts }}.{{ $json.nonce }}.{{ $json.payload }}","secret":"={{ $env.QHS_N8N_HMAC_SECRET }}","dataPropertyName":"mac","encoding":"hex"}},
+    {"id":"6c4f6104-96be-4390-8131-f6f529579872","name":"Send Due Follow-ups","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[960,300],"parameters":{"method":"POST","url":"={{ $env.QHS_WP_URL }}/wp-json/qhs/v1/n8n/followups","sendHeaders":true,"headerParameters":{"parameters":[{"name":"X-QHS-Key-Id","value":"n8n"},{"name":"X-QHS-Timestamp","value":"={{ $json.ts }}"},{"name":"X-QHS-Nonce","value":"={{ $json.nonce }}"},{"name":"X-QHS-Signature","value":"=v1={{ $json.mac }}"}]},"sendBody":true,"contentType":"json","specifyBody":"json","jsonBody":"={{ JSON.stringify({ payload: $json.payload }) }}"},"retryOnFail":true,"maxTries":3,"waitBetweenTries":5000}
+  ],
+  "connections": {
+    "Every Hour":{"main":[[{"node":"Prepare Follow-up Run","type":"main","index":0}]]},
+    "Prepare Follow-up Run":{"main":[[{"node":"Sign Follow-up Run","type":"main","index":0}]]},
+    "Sign Follow-up Run":{"main":[[{"node":"Send Due Follow-ups","type":"main","index":0}]]}
+  }
+}

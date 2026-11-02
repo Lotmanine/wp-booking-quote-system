@@ -1,0 +1,17 @@
+{
+  "id": "aONh1Sswi5Ude4Ix",
+  "name": "QHS Booking Reminders",
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "errorWorkflow": "5qpIqCXYRXAcyTwa" },
+  "nodes": [
+    {"id":"2c9c3058-986d-4662-b1a2-ffbcccc11c3a","name":"Every 15 Minutes","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.3,"position":[240,300],"parameters":{"rule":{"interval":[{"field":"minutes","minutesInterval":15}]}}},
+    {"id":"bf131d29-6145-4185-8e4e-d7fb396896bf","name":"Prepare Reminder Run","type":"n8n-nodes-base.code","typeVersion":2,"position":[480,300],"parameters":{"mode":"runOnceForAllItems","jsCode":"let nonce = '';\nwhile (nonce.length < 32) { nonce += Math.floor(Math.random() * 16).toString(16); }\nconst hours = Number($env.QHS_REMINDER_HOURS_AHEAD || 24);\nreturn [{ json: { payload: JSON.stringify({ run_id: String($execution.id), hours_ahead: hours }), ts: String(Math.floor(Date.now() / 1000)), nonce } }];"}},
+    {"id":"99c7e2f7-3c36-4eac-aa5b-a1484e82e3ca","name":"Sign Reminder Run","type":"n8n-nodes-base.crypto","typeVersion":1,"position":[720,300],"parameters":{"action":"hmac","type":"SHA256","value":"={{ $json.ts }}.{{ $json.nonce }}.{{ $json.payload }}","secret":"={{ $env.QHS_N8N_HMAC_SECRET }}","dataPropertyName":"mac","encoding":"hex"}},
+    {"id":"cffdd161-e9a2-44d6-bc2a-6f92ba40e7ed","name":"Send Due Reminders","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[960,300],"parameters":{"method":"POST","url":"={{ $env.QHS_WP_URL }}/wp-json/qhs/v1/n8n/reminders","sendHeaders":true,"headerParameters":{"parameters":[{"name":"X-QHS-Key-Id","value":"n8n"},{"name":"X-QHS-Timestamp","value":"={{ $json.ts }}"},{"name":"X-QHS-Nonce","value":"={{ $json.nonce }}"},{"name":"X-QHS-Signature","value":"=v1={{ $json.mac }}"}]},"sendBody":true,"contentType":"json","specifyBody":"json","jsonBody":"={{ JSON.stringify({ payload: $json.payload }) }}"},"retryOnFail":true,"maxTries":3,"waitBetweenTries":5000}
+  ],
+  "connections": {
+    "Every 15 Minutes":{"main":[[{"node":"Prepare Reminder Run","type":"main","index":0}]]},
+    "Prepare Reminder Run":{"main":[[{"node":"Sign Reminder Run","type":"main","index":0}]]},
+    "Sign Reminder Run":{"main":[[{"node":"Send Due Reminders","type":"main","index":0}]]}
+  }
+}

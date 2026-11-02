@@ -1,0 +1,20 @@
+{
+  "id": "5qpIqCXYRXAcyTwa",
+  "name": "QHS Booking Alerts",
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "UTC" },
+  "nodes": [
+    {"id":"a6d8a011-1296-4d8b-802b-07302dded430","name":"Any QHS Workflow Failed","type":"n8n-nodes-base.errorTrigger","typeVersion":1,"position":[240,300],"parameters":{}},
+    {"id":"a15f7732-d5bc-4db7-9dcc-c166c5ff9893","name":"Format Alert","type":"n8n-nodes-base.code","typeVersion":2,"position":[480,300],"parameters":{"mode":"runOnceForAllItems","jsCode":"const item = $input.first().json;\nconst run = item.execution || {};\nconst message = (item.workflow?.name || 'workflow') + ' failed at ' + (run.lastNodeExecuted || 'unknown node') + ': ' + (run.error?.message || 'no message');\nreturn [{ json: { source: 'n8n', message: message.slice(0, 400) } }];"}},
+    {"id":"467b9fc3-2675-4541-a22a-7016f3c5eb34","name":"Send Telegram Alert","type":"n8n-nodes-base.telegram","typeVersion":1.2,"position":[720,180],"parameters":{"resource":"message","operation":"sendMessage","chatId":"={{ $env.QHS_TELEGRAM_CHAT_ID }}","text":"=Quillmoor demo alert: {{ $json.message }}","additionalFields":{"appendAttribution":false,"parse_mode":"HTML"}},"credentials":{"telegramApi":{"id":"f99abjVnlKf6t0e5","name":"Telegram Lead Bot"}},"onError":"continueRegularOutput","webhookId":"82236e7c-ad9f-4d53-a608-190ca6f59552"},
+    {"id":"7a54ee70-135f-4dc0-81ea-f10db8f42a6b","name":"Prepare Alert","type":"n8n-nodes-base.code","typeVersion":2,"position":[720,420],"parameters":{"mode":"runOnceForAllItems","jsCode":"const item = $input.first().json;\nlet nonce = '';\nwhile (nonce.length < 32) { nonce += Math.floor(Math.random() * 16).toString(16); }\nreturn [{ json: { payload: JSON.stringify({ source: item.source, message: item.message }), ts: String(Math.floor(Date.now() / 1000)), nonce } }];"}},
+    {"id":"048b8e64-1305-4e9e-b88f-1b11f30c7435","name":"Sign Alert","type":"n8n-nodes-base.crypto","typeVersion":1,"position":[960,420],"parameters":{"action":"hmac","type":"SHA256","value":"={{ $json.ts }}.{{ $json.nonce }}.{{ $json.payload }}","secret":"={{ $env.QHS_N8N_HMAC_SECRET }}","dataPropertyName":"mac","encoding":"hex"}},
+    {"id":"bbcc8c79-3dfb-4614-9002-69461b1f9234","name":"Store Alert in WordPress","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[1200,420],"parameters":{"method":"POST","url":"={{ $env.QHS_WP_URL }}/wp-json/qhs/v1/n8n/alert","sendHeaders":true,"headerParameters":{"parameters":[{"name":"X-QHS-Key-Id","value":"n8n"},{"name":"X-QHS-Timestamp","value":"={{ $json.ts }}"},{"name":"X-QHS-Nonce","value":"={{ $json.nonce }}"},{"name":"X-QHS-Signature","value":"=v1={{ $json.mac }}"}]},"sendBody":true,"contentType":"json","specifyBody":"json","jsonBody":"={{ JSON.stringify({ payload: $json.payload }) }}"},"retryOnFail":true,"maxTries":3,"waitBetweenTries":2000,"onError":"continueRegularOutput"}
+  ],
+  "connections": {
+    "Any QHS Workflow Failed":{"main":[[{"node":"Format Alert","type":"main","index":0}]]},
+    "Format Alert":{"main":[[{"node":"Send Telegram Alert","type":"main","index":0},{"node":"Prepare Alert","type":"main","index":0}]]},
+    "Prepare Alert":{"main":[[{"node":"Sign Alert","type":"main","index":0}]]},
+    "Sign Alert":{"main":[[{"node":"Store Alert in WordPress","type":"main","index":0}]]}
+  }
+}
