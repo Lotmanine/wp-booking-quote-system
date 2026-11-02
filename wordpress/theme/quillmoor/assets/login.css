@@ -1,0 +1,15 @@
+/* Sign-in screen in the Quillmoor style. */
+body.login { background: #f8fafc; font-family: Outfit, ui-sans-serif, system-ui, sans-serif; color: #0f172a; }
+.login h1 a { background: none !important; width: auto !important; height: auto !important; text-indent: 0 !important; overflow: visible !important; font-size: 1.25rem; font-weight: 600; letter-spacing: -.01em; color: #0f172a; display: inline-flex !important; align-items: center; gap: .6rem; }
+.login h1 a::before { content: "QM"; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 10px; background: #0f172a; color: #fff; font: 500 12px/1 "JetBrains Mono", monospace; }
+.login form { border: 1px solid #e2e8f0 !important; border-radius: 18px !important; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 12px 32px -16px rgba(15,23,42,.14) !important; padding: 26px 24px 30px !important; }
+.login label { font-size: .875rem; font-weight: 500; color: #0f172a; }
+.login input[type="text"], .login input[type="password"], .login input[type="email"] { border-radius: 12px !important; border: 1px solid #cbd5e1 !important; min-height: 3rem; font-size: 1rem !important; padding: .55rem .9rem !important; box-shadow: none !important; }
+.login input[type="text"]:focus, .login input[type="password"]:focus { border-color: #059669 !important; box-shadow: 0 0 0 3px rgba(5,150,105,.22) !important; }
+.login .button-primary { background: #047857 !important; border-color: #047857 !important; border-radius: 12px !important; min-height: 2.75rem !important; padding: 0 1.25rem !important; font-weight: 600; font-size: .9375rem !important; }
+.login .button-primary:hover { background: #065f46 !important; border-color: #065f46 !important; }
+.login .button.wp-hide-pw .dashicons { color: #475569; }
+.login #nav a, .login #backtoblog a { color: #475569 !important; }
+.login #nav a:hover, .login #backtoblog a:hover { color: #047857 !important; }
+.login .message, .login .notice, .login #login_error { border-radius: 12px; border-left-color: #059669; }
+.login #login_error { border-left-color: #b91c1c; }

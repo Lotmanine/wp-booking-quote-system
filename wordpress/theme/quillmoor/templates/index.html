@@ -1,6 +1,6 @@
-<!-- wp:template-part {"slug":"header","area":"header"} /-->
-<!-- wp:group {"tagName":"main","align":"wide","style":{"spacing":{"padding":{"top":"32px","left":"16px","right":"16px"}}},"layout":{"type":"constrained"}} -->
-<main class="wp-block-group alignwide" style="padding-top:32px;padding-right:16px;padding-left:16px">
+<!-- wp:template-part {"slug":"header","area":"header","tagName":"div"} /-->
+<!-- wp:group {"tagName":"main","className":"qm-main qm-container qm-empty","layout":{"type":"default"}} -->
+<main class="wp-block-group qm-main qm-container qm-empty">
 <!-- wp:query {"queryId":1,"query":{"perPage":10,"postType":"post","inherit":true}} -->
 <div class="wp-block-query">
 <!-- wp:post-template -->
@@ -8,10 +8,10 @@
 <!-- wp:post-excerpt /-->
 <!-- /wp:post-template -->
 <!-- wp:query-no-results -->
-<!-- wp:paragraph --><p>Nothing to show.</p><!-- /wp:paragraph -->
+<!-- wp:paragraph --><p>Nothing to show here. <a href="/services/">Browse services</a>.</p><!-- /wp:paragraph -->
 <!-- /wp:query-no-results -->
 </div>
 <!-- /wp:query -->
 </main>
 <!-- /wp:group -->
-<!-- wp:template-part {"slug":"footer","area":"footer"} /-->
+<!-- wp:template-part {"slug":"footer","area":"footer","tagName":"div"} /-->

@@ -1,0 +1,15 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/site-header",
+	"title": "Site header",
+	"category": "theme",
+	"textdomain": "quillmoor",
+	"supports": {
+		"html": false,
+		"multiple": false,
+		"inserter": false
+	},
+	"viewScript": "file:./view.js",
+	"render": "file:./render.php"
+}
