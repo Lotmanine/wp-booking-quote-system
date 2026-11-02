@@ -1,0 +1,18 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "quillmoor/staff",
+	"title": "Staff portal",
+	"category": "widgets",
+	"textdomain": "quillmoor-booking",
+	"supports": {
+		"html": false,
+		"multiple": false
+	},
+	"style": "qhs-app",
+	"viewScript": [
+		"qhs-api",
+		"file:./view.js"
+	],
+	"render": "file:./render.php"
+}
