@@ -30,7 +30,7 @@ final class Banner {
 	 */
 	public static function render(): void {
 		printf(
-			'<div class="qhs-demo-banner" role="status" style="background:#fff3cd;color:#3d2f00;border-bottom:2px solid #d9b44a;padding:8px 16px;text-align:center;font:600 14px/1.4 system-ui,sans-serif;position:relative;z-index:99999">%s</div>',
+			'<div class="qhs-demo-banner" role="status" style="background:#fffbeb;color:#78350f;border-bottom:1px solid #fcd34d;padding:8px 16px;text-align:center;font:500 13px/1.45 Outfit,system-ui,sans-serif;letter-spacing:.01em;position:relative;z-index:99999"><span style="display:inline-block;width:7px;height:7px;border-radius:99px;background:#d97706;margin-right:8px;vertical-align:1px" aria-hidden="true"></span>%s</div>',
 			esc_html( self::TEXT )
 		);
 	}

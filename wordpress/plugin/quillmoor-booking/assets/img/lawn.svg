@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="t"><title id="t">Illustration: a striped lawn, a trimmed hedge and a push mower</title>
+<rect width="640" height="400" fill="#f0fdf4"/>
+<rect x="0" y="40" width="640" height="110" fill="#ecfeff"/>
+<rect x="40" y="110" width="560" height="70" rx="20" fill="#047857"/>
+<path d="M0 180h640v220H0z" fill="#22c55e"/>
+<g fill="#16a34a"><path d="M0 180h90l-60 220H0z"/><path d="M180 180h90l-40 220h-90z"/><path d="M360 180h90l-10 220h-90z"/><path d="M540 180h100v220h-80z"/></g>
+<g transform="translate(330 250)"><rect x="0" y="30" width="120" height="50" rx="14" fill="#0f172a"/><rect x="14" y="16" width="92" height="22" rx="8" fill="#10b981"/>
+<circle cx="22" cy="86" r="16" fill="#334155"/><circle cx="98" cy="86" r="16" fill="#334155"/><path d="M110 34L190 -60h30" fill="none" stroke="#475569" stroke-width="10" stroke-linecap="round"/></g>
+<circle cx="90" cy="76" r="26" fill="#fde68a"/>
+</svg>

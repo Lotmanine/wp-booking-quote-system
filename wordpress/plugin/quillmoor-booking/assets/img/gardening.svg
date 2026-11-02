@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="t"><title id="t">Illustration: rounded hedges, a flower bed and garden shears</title>
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecfeff"/><stop offset="1" stop-color="#f0fdf4"/></linearGradient></defs>
+<rect width="640" height="400" fill="url(#sky)"/>
+<circle cx="540" cy="80" r="34" fill="#fde68a"/>
+<path d="M0 270c120-40 260-40 380-10s200 20 260 0v140H0z" fill="#bbf7d0"/>
+<path d="M0 320c160-30 360-20 640 0v80H0z" fill="#86efac"/>
+<ellipse cx="130" cy="230" rx="90" ry="70" fill="#059669"/><ellipse cx="250" cy="240" rx="70" ry="58" fill="#047857"/><ellipse cx="360" cy="250" rx="54" ry="44" fill="#10b981"/>
+<rect x="420" y="282" width="170" height="30" rx="8" fill="#92400e"/>
+<circle cx="450" cy="272" r="14" fill="#f472b6"/><circle cx="486" cy="266" r="14" fill="#fbbf24"/><circle cx="522" cy="272" r="14" fill="#f472b6"/><circle cx="558" cy="266" r="14" fill="#fbbf24"/>
+<g transform="translate(250 330) rotate(-12)"><path d="M0 0l80-14 6 10-80 16z" fill="#94a3b8"/><path d="M0 0l80 14-4 10-80-12z" fill="#cbd5e1"/><rect x="-60" y="-10" width="64" height="16" rx="8" fill="#0f172a"/><rect x="-60" y="4" width="64" height="16" rx="8" fill="#334155"/></g>
+</svg>
