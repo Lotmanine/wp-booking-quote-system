@@ -1,0 +1,12 @@
+parameters:
+	level: 6
+	paths:
+		- quillmoor-booking.php
+		- src
+	bootstrapFiles:
+		- tests/phpstan-constants.php
+	scanFiles:
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php
+		- tests/phpstan-stubs.php
+	reportUnmatchedIgnoredErrors: false
