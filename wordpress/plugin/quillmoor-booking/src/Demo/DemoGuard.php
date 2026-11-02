@@ -116,7 +116,7 @@ final class DemoGuard {
 		global $pagenow;
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only routing check.
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
-		$own  = in_array( $page, array( 'qhs-calendar', 'qhs-reports', 'qhs-triage' ), true );
+		$own  = in_array( $page, array( 'qhs-calendar', 'qhs-bookings', 'qhs-reports', 'qhs-triage' ), true );
 		if ( ! in_array( $pagenow, self::ALLOWED_SCREENS, true ) || ( 'admin.php' === $pagenow && ! $own ) ) {
 			$user = wp_get_current_user();
 			wp_safe_redirect( in_array( Roles::MANAGER, $user->roles, true ) ? admin_url( 'admin.php?page=qhs-calendar' ) : home_url( '/' ) );
