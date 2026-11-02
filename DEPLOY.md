@@ -49,11 +49,13 @@ Save `QHS_HMAC_SECRET_N8N` and `DISPATCH_API_KEY`: step 4 needs them too.
 Never paste a live Stripe key. The site refuses `sk_live_`, `rk_live_` and `pk_live_` values at
 boot and on save, and then closes every booking route until the value is removed.
 
-Without test keys the deposit step answers "Deposits are not set up yet". Without a Brevo key,
-email is written to the mail log and nothing is sent.
+Without Stripe test keys a hold still works and the deposit step says that payments are not set up
+yet. Without Turnstile keys, only signed-in accounts can reserve. Without a Brevo key, email is
+written to the mail log and nothing is sent.
 
-Deploy. The first start takes about two minutes: it installs WordPress, activates the plugins and
-seeds the demo accounts. Watch for `Site ready at` in the `wordpress` logs.
+Deploy. The first start takes a few minutes: it installs WordPress, activates the plugins (Secure
+Custom Fields among them), seeds the demo accounts and imports the 56 listing photos. An existing
+site from the home services version drops its old booking tables and restores the demo once. Watch for `Site ready at` in the `wordpress` logs.
 
 ## 4. Connect n8n
 
@@ -110,13 +112,21 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 Then run one test payment:
 
-1. Sign in on `/demo/` as `demo-customer`, open a service from `/services/`, pick a district, a day and a time on the reservation card, and hold the slot.
+1. Sign in on `/demo/` as `demo-customer`, open `/listing/fern-hollow-cabin/`, pick two or more nights
+   on the booking card, reserve and hold them.
 2. Pay with Stripe's test card `4242 4242 4242 4242`, any future expiry, any CVC.
-3. Refresh the portal. Within about two minutes the booking should reach **Staff assigned**.
-4. Sign in as `demo-admin` and open Bookings, Reports. "Events waiting for n8n" should be 0.
-5. Sign in as `demo-staff` and take the job through to complete.
+3. You return to Trips with the booking confirmed (Fern Hollow Cabin is instant book).
+4. Sign in as `demo-host` and open Quillmoor, Bookings: the booking is listed. Cancel it, then use
+   Refund deposit, and check the refund in the Stripe test dashboard.
+5. Sign in as `demo-admin` and open Quillmoor, Activity. "Events waiting for n8n" should be 0 once
+   the workflows are published.
 
 Quote and hold are limited per IP, and each hold lasts ten minutes.
+
+Note for the n8n workflows: booking events now carry `type` (`stay` or `dining`), `listing_id` and
+`dispatch` (false for tables). The exported Events workflow still requests dispatch for every
+confirmed booking; table bookings come back unassigned and raise an alert until a filter on
+`dispatch` is added there.
 
 ## Memory
 

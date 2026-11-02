@@ -6,11 +6,17 @@ use Quillmoor\Booking\Services;
 
 class AbuseTest extends TestCase {
 
+	private int $listing = 0;
+
 	private function quote_body(): array {
+		if ( 0 === $this->listing ) {
+			$this->listing = $this->stay_listing();
+		}
 		return array(
-			'service'         => 'cleaning',
-			'size'            => 'small',
-			'area'            => 'north',
+			'listing_id'      => $this->listing,
+			'check_in'        => $this->day( 10 ),
+			'check_out'       => $this->day( 12 ),
+			'guests'          => 2,
 			'email'           => 'p@example.com',
 			'full_name'       => 'P',
 			'turnstile_token' => 'token',
@@ -34,10 +40,20 @@ class AbuseTest extends TestCase {
 	}
 
 	public function test_turnstile_fails_closed_without_a_secret(): void {
-		$this->env( 'TURNSTILE_SECRET_KEY', '' );
-		putenv( 'TURNSTILE_SECRET_KEY' );
+		$this->unset_env( 'TURNSTILE_SECRET_KEY' );
 
-		$this->assertSame( 403, $this->rest( 'POST', '/quote', $this->quote_body() )->get_status() );
+		$response = $this->rest( 'POST', '/quote', $this->quote_body() );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( 0, $this->row_count( 'bookings' ) );
+	}
+
+	public function test_the_verifier_itself_refuses_without_a_secret_or_token(): void {
+		$this->assertFalse( Services::turnstile()->verify( '', '1.2.3.4' ) );
+		$this->assertFalse( Services::turnstile()->verify( str_repeat( 'x', 2049 ), '1.2.3.4' ) );
+		$this->unset_env( 'TURNSTILE_SECRET_KEY' );
+		$this->assertFalse( Services::turnstile()->verify( 'token', '1.2.3.4' ) );
+		$this->assertSame( array(), $this->http );
 	}
 
 	public function test_turnstile_runs_on_the_server(): void {
@@ -47,23 +63,22 @@ class AbuseTest extends TestCase {
 	}
 
 	public function test_turnstile_stops_a_hold(): void {
-		$id                 = $this->quote();
+		$id                 = $this->stay_quote( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ) );
 		$this->turnstile_ok = false;
-		$booking            = Services::bookings()->find( $id );
 
 		$response = $this->rest(
 			'POST',
 			'/hold',
 			array(
 				'booking_id'      => $id,
-				'slot_start'      => $this->slot(),
-				'token'           => \Quillmoor\Booking\Security\BookingPolicy::token_for( $booking ),
+				'token'           => $this->token( $id ),
 				'turnstile_token' => 'token',
 			)
 		);
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( 'quote', $this->state( $id ) );
+		$this->assertSame( array(), $this->nights_of( $id ) );
 	}
 
 	public function test_per_ip_limit_on_quotes(): void {
@@ -79,6 +94,15 @@ class AbuseTest extends TestCase {
 
 		$this->assertSame( 404, $this->rest( 'POST', '/hold', array( 'turnstile_token' => 't' ) )->get_status() );
 		$this->assertSame( 429, $this->rest( 'POST', '/hold', array( 'turnstile_token' => 't' ) )->get_status() );
+	}
+
+	public function test_price_previews_have_their_own_limit(): void {
+		$listing = $this->stay_listing();
+		for ( $i = 0; $i < 120; $i++ ) {
+			Services::counters()->take( 'rl:price:' . ClientIp::hash( ClientIp::resolve() ), MINUTE_IN_SECONDS, 120 );
+		}
+
+		$this->assertSame( 429, $this->rest( 'POST', "/listings/{$listing}/price", array( 'check_in' => $this->day( 10 ), 'check_out' => $this->day( 12 ) ) )->get_status() );
 	}
 
 	public function test_counter_never_passes_its_limit(): void {

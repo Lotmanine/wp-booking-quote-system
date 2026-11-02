@@ -1,6 +1,6 @@
 <?php
 /**
- * Test bootstrap: real WordPress, WooCommerce and FluentCRM against a real MariaDB.
+ * Test bootstrap: real WordPress, WooCommerce, FluentCRM and Secure Custom Fields against a real MariaDB.
  *
  * @package Quillmoor\Booking
  */
@@ -11,6 +11,7 @@ require_once $plugin_root . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-au
 putenv( 'WP_PHPUNIT__TESTS_CONFIG=' . $plugin_root . '/tests/wp-tests-config.php' );
 putenv( 'QHS_HMAC_SECRET_N8N=' . str_repeat( 'n', 40 ) );
 putenv( 'QHS_HMAC_SECRET_DISPATCH=' . str_repeat( 'd', 40 ) );
+putenv( 'TURNSTILE_SITE_KEY=test-site-key' );
 putenv( 'TURNSTILE_SECRET_KEY=test-secret' );
 putenv( 'QHS_PAYMENT_MODE=fake' );
 putenv( 'QHS_MAIL_PER_ADDRESS_DAILY=5' );
@@ -27,6 +28,7 @@ tests_add_filter(
 		$plugins = dirname( $plugin_root );
 		require_once $plugins . '/woocommerce/woocommerce.php';
 		require_once $plugins . '/fluent-crm/fluent-crm.php';
+		require_once $plugins . '/secure-custom-fields/secure-custom-fields.php';
 		require_once $plugin_root . '/quillmoor-booking.php';
 	}
 );

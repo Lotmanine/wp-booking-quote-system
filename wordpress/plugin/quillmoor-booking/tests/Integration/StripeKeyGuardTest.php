@@ -56,23 +56,51 @@ class StripeKeyGuardTest extends TestCase {
 	}
 
 	public function test_booking_routes_refuse_to_run(): void {
-		$id = $this->quote();
+		$listing = $this->stay_listing();
+		$id      = $this->stay_quote( $listing, $this->day( 10 ), $this->day( 12 ) );
 		$this->env( 'STRIPE_TEST_SECRET_KEY', 'sk_live_abc' );
 
-		$hold = $this->rest(
+		$hold  = $this->rest(
 			'POST',
 			'/hold',
 			array(
 				'booking_id'      => $id,
-				'slot_start'      => $this->slot(),
+				'token'           => $this->token( $id ),
 				'turnstile_token' => 'x',
 			)
 		);
-		$quote = $this->rest( 'POST', '/quote', array( 'turnstile_token' => 'x' ) );
+		$quote = $this->rest(
+			'POST',
+			'/quote',
+			array(
+				'listing_id'      => $listing,
+				'check_in'        => $this->day( 10 ),
+				'check_out'       => $this->day( 12 ),
+				'email'           => 'k@example.com',
+				'full_name'       => 'K',
+				'turnstile_token' => 'x',
+			)
+		);
 
 		$this->assertSame( 503, $hold->get_status() );
 		$this->assertSame( 503, $quote->get_status() );
 		$this->assertSame( 'payments_refused', $hold->get_data()['code'] );
+		$this->assertSame( 'quote', $this->state( $id ) );
+		$this->assertSame( 1, $this->row_count( 'bookings' ) );
+	}
+
+	public function test_the_booking_card_says_why_payments_are_off(): void {
+		$this->assertSame( 'Local fake gateway (tests only, not Stripe)', \Quillmoor\Booking\Blocks::payments_label() );
+
+		$this->env( 'QHS_PAYMENT_MODE', 'stripe' );
+		$this->unset_env( 'STRIPE_TEST_SECRET_KEY' );
+		$this->unset_env( 'STRIPE_TEST_PUBLISHABLE_KEY' );
+		$this->assertSame( 'Not set up yet: no Stripe test keys', \Quillmoor\Booking\Blocks::payments_label() );
+		$this->assertFalse( \Quillmoor\Booking\Blocks::readiness()['payments'] );
+
+		$this->env( 'STRIPE_TEST_SECRET_KEY', 'sk_live_abc' );
+		$this->assertSame( 'Off: a live payment key was refused', \Quillmoor\Booking\Blocks::payments_label() );
+		$this->assertTrue( \Quillmoor\Booking\Blocks::readiness()['blocked'] );
 	}
 
 	public function test_no_gateway_is_offered(): void {
@@ -134,6 +162,8 @@ class StripeKeyGuardTest extends TestCase {
 
 	public function test_stripe_mode_needs_real_test_keys(): void {
 		$this->env( 'QHS_PAYMENT_MODE', 'stripe' );
+		$this->unset_env( 'STRIPE_TEST_SECRET_KEY' );
+		$this->unset_env( 'STRIPE_TEST_PUBLISHABLE_KEY' );
 		$this->assertFalse( Services::deposit()->is_available() );
 
 		$this->env( 'STRIPE_TEST_SECRET_KEY', 'sk_test_abc' );

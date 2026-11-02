@@ -4,7 +4,6 @@ namespace Quillmoor\Booking\Tests\Integration;
 use Quillmoor\Booking\Crm\CrmPipeline;
 use Quillmoor\Booking\Crm\CrmPort;
 use Quillmoor\Booking\Db;
-use Quillmoor\Booking\Security\BookingPolicy;
 use Quillmoor\Booking\Security\Signer;
 use Quillmoor\Booking\Services;
 
@@ -36,6 +35,36 @@ class CrmAndTriageTest extends TestCase {
 		parent::tear_down();
 	}
 
+	private int $listing = 0;
+
+	/** A stay quote on the shared test listing. */
+	private function quote( string $email = 'a@example.com', string $note = '', bool $consent = false ): int {
+		if ( 0 === $this->listing ) {
+			$this->listing = $this->stay_listing();
+		}
+		$offset = 10 + 3 * $this->row_count( 'bookings' );
+		return $this->stay_quote( $this->listing, $this->day( $offset ), $this->day( $offset + 2 ), 2, array(), $email, 0, $note, $consent );
+	}
+
+	/** A confirmed stay, with its host signed in. */
+	private function confirmed_as_host(): int {
+		$host = $this->make_host();
+		$id   = $this->paid_stay( $this->stay_listing( array(), $host ), $this->day( 10 ), $this->day( 12 ) );
+		wp_set_current_user( $host );
+		return $id;
+	}
+
+	private function review( int $id, string $do ): array {
+		return $this->admin_post(
+			'booking',
+			array(
+				'booking_id' => $id,
+				'do'         => $do,
+				'_wpnonce'   => wp_create_nonce( 'qhs_booking_' . $id ),
+			)
+		);
+	}
+
 	private function signed( string $route, array $payload_data ) {
 		$payload = (string) wp_json_encode( $payload_data );
 		$time    = (string) time();
@@ -55,16 +84,79 @@ class CrmAndTriageTest extends TestCase {
 
 	public function test_an_event_sets_one_stage_and_clears_the_others(): void {
 		$this->fake_crm();
-		$id = $this->confirmed();
+		$id = $this->paid_stay( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ) );
 
-		Services::pipeline()->apply( 'booking.confirmed', $id );
+		$this->assertTrue( Services::pipeline()->apply( 'booking.confirmed', $id ) );
 
 		$call = end( $this->calls );
 		$this->assertContains( 'stage-confirmed', $call['add_tags'] );
-		$this->assertContains( 'service-cleaning', $call['add_tags'] );
-		$this->assertContains( 'area-north', $call['add_tags'] );
+		$this->assertContains( 'type-stay', $call['add_tags'] );
 		$this->assertContains( 'stage-quote', $call['remove_tags'] );
+		$this->assertContains( 'stage-requested', $call['remove_tags'] );
 		$this->assertNotContains( 'stage-confirmed', $call['remove_tags'] );
+	}
+
+	/** @dataProvider stages */
+	public function test_each_event_maps_to_one_stage( string $event, string $stage ): void {
+		$this->fake_crm();
+		$id = $this->paid_table( $this->dining_listing(), $this->seating( 3 ), 2 );
+
+		Services::pipeline()->apply( $event, $id );
+
+		$call = end( $this->calls );
+		$this->assertSame( 1, count( array_filter( $call['add_tags'], static fn( string $tag ): bool => str_starts_with( $tag, 'stage-' ) ) ) );
+		$this->assertContains( $stage, $call['add_tags'] );
+		$this->assertContains( 'type-dining', $call['add_tags'] );
+		$this->assertNotContains( $stage, $call['remove_tags'] );
+	}
+
+	public static function stages(): array {
+		return array(
+			'quote'        => array( 'booking.quote', 'stage-quote' ),
+			'hold'         => array( 'booking.hold', 'stage-hold' ),
+			'hold expired' => array( 'booking.hold_expired', 'stage-quote' ),
+			'paid'         => array( 'booking.deposit_paid', 'stage-deposit-paid' ),
+			'requested'    => array( 'booking.requested', 'stage-requested' ),
+			'confirmed'    => array( 'booking.confirmed', 'stage-confirmed' ),
+			'moved'        => array( 'booking.rescheduled', 'stage-confirmed' ),
+			'arrived'      => array( 'booking.arrived', 'stage-arrived' ),
+			'completed'    => array( 'booking.completed', 'stage-completed' ),
+			'no-show'      => array( 'booking.no_show', 'stage-no-show' ),
+			'declined'     => array( 'booking.declined', 'stage-declined' ),
+			'cancelled'    => array( 'booking.cancelled', 'stage-cancelled' ),
+		);
+	}
+
+	public function test_unknown_events_and_bookings_are_skipped(): void {
+		$this->fake_crm();
+		$id = $this->quote();
+
+		$this->assertFalse( Services::pipeline()->apply( 'booking.note_received', $id ) );
+		$this->assertFalse( Services::pipeline()->apply( 'booking.quote', 999999 ) );
+		$this->assertSame( array(), $this->calls );
+	}
+
+	public function test_the_demo_tag_only_on_the_demo_site(): void {
+		$this->fake_crm();
+		$id = $this->quote();
+
+		$this->env( 'QHS_DEMO_SITE', '1' );
+		Services::pipeline()->apply( 'booking.quote', $id );
+		$last = end( $this->calls );
+		$this->assertContains( CrmPipeline::DEMO_TAG, $last['add_tags'] );
+
+		$this->env( 'QHS_DEMO_SITE', '0' );
+		Services::pipeline()->apply( 'booking.quote', $id );
+		$last = end( $this->calls );
+		$this->assertNotContains( CrmPipeline::DEMO_TAG, $last['add_tags'] );
+	}
+
+	public function test_the_tag_list_covers_every_stage(): void {
+		foreach ( CrmPipeline::STAGES as $stage ) {
+			$this->assertContains( $stage, CrmPipeline::all_tags() );
+		}
+		$this->assertContains( 'type-dining', CrmPipeline::all_tags() );
+		$this->assertSame( CrmPipeline::all_tags(), array_values( array_unique( CrmPipeline::all_tags() ) ) );
 	}
 
 	public function test_no_consent_means_no_consent_tag(): void {
@@ -80,7 +172,7 @@ class CrmAndTriageTest extends TestCase {
 	}
 
 	public function test_a_typed_consent_box_waits_for_the_address_owner(): void {
-		$id       = $this->quote( 'someone@example.com', 0, 'north', '', true );
+		$id       = $this->quote( 'someone@example.com', '', true );
 		$customer = Services::bookings()->customer( (int) Services::bookings()->find( $id )['customer_id'] );
 
 		$this->assertSame( 0, (int) $customer['marketing_consent'] );
@@ -88,7 +180,7 @@ class CrmAndTriageTest extends TestCase {
 	}
 
 	public function test_confirming_the_email_applies_pending_consent(): void {
-		$id    = $this->quote( 'someone@example.com', 0, 'north', '', true );
+		$id    = $this->quote( 'someone@example.com', '', true );
 		$cid   = (int) Services::bookings()->find( $id )['customer_id'];
 		$token = 'known-token';
 		Services::bookings()->update_customer(
@@ -147,13 +239,31 @@ class CrmAndTriageTest extends TestCase {
 	}
 
 	public function test_a_note_queues_triage_for_n8n(): void {
-		$id = $this->quote( 'a@example.com', 0, 'north', 'Water is leaking' );
+		$id = $this->quote( 'a@example.com', 'We arrive late, around midnight' );
 
 		$this->assertSame( 1, $this->row_count( 'outbox', "target = 'triage' AND booking_id = {$id}" ) );
+		$payload = json_decode( (string) $GLOBALS['wpdb']->get_var( 'SELECT payload FROM ' . Db::table( 'outbox' ) . " WHERE target = 'triage' AND booking_id = {$id}" ), true );
+		$this->assertSame(
+			array(
+				'booking_id' => $id,
+				'note'       => 'We arrive late, around midnight',
+			),
+			$payload
+		);
+		$this->assertSame( 0, $this->row_count( 'outbox', "target = 'triage' AND booking_id = " . $this->quote( 'b@example.com' ) ) );
+	}
+
+	public function test_triage_has_a_daily_cap(): void {
+		$this->env( 'QHS_TRIAGE_DAILY_CAP', '1' );
+
+		$this->quote( 'a@example.com', 'First note' );
+		$this->quote( 'b@example.com', 'Second note' );
+
+		$this->assertSame( 1, $this->row_count( 'outbox', "target = 'triage'" ) );
 	}
 
 	public function test_ai_suggestion_never_changes_the_booking(): void {
-		$id     = $this->assigned( $this->user( 'qhs_staff' ) );
+		$id     = $this->paid_stay( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ) );
 		$before = Services::bookings()->find( $id );
 
 		$response = $this->signed(
@@ -185,42 +295,56 @@ class CrmAndTriageTest extends TestCase {
 		$this->assertSame( 400, $response->get_status() );
 	}
 
-	public function test_only_staff_acceptance_changes_priority(): void {
-		$staff = $this->user( 'qhs_staff' );
-		$id    = $this->assigned( $staff );
+	public function test_only_the_host_accepting_changes_priority(): void {
+		$id = $this->confirmed_as_host();
 		$this->signed(
 			'/n8n/triage',
 			array(
 				'booking_id' => $id,
 				'priority'   => 'urgent',
-				'reason'     => 'Leak',
+				'reason'     => 'Late arrival',
 				'source'     => 'ai',
 			)
 		);
 
-		wp_set_current_user( $staff );
-		$this->assertSame( 200, $this->rest( 'POST', "/staff/jobs/{$id}/triage", array( 'decision' => 'accepted' ) )->get_status() );
+		$this->assertSame( 'success', $this->review( $id, 'triage_accept' )['notice']['kind'] );
 
 		$this->assertSame( 'urgent', Services::bookings()->find( $id )['priority'] );
+		$this->assertSame( 1, $this->row_count( 'triage', "status = 'accepted' AND reviewed_by = " . get_current_user_id() ) );
 	}
 
 	public function test_dismissing_keeps_the_priority(): void {
-		$staff = $this->user( 'qhs_staff' );
-		$id    = $this->assigned( $staff );
+		$id = $this->confirmed_as_host();
 		$this->signed(
 			'/n8n/triage',
 			array(
 				'booking_id' => $id,
 				'priority'   => 'urgent',
-				'reason'     => 'Leak',
+				'reason'     => 'Late arrival',
 				'source'     => 'ai',
 			)
 		);
 
-		wp_set_current_user( $staff );
-		$this->rest( 'POST', "/staff/jobs/{$id}/triage", array( 'decision' => 'dismissed' ) );
+		$this->review( $id, 'triage_dismiss' );
 
 		$this->assertSame( 'normal', Services::bookings()->find( $id )['priority'] );
+		$this->assertSame( 1, $this->row_count( 'triage', "status = 'dismissed'" ) );
+	}
+
+	public function test_another_host_cannot_review_a_suggestion(): void {
+		$id = $this->confirmed_as_host();
+		$this->signed(
+			'/n8n/triage',
+			array(
+				'booking_id' => $id,
+				'priority'   => 'urgent',
+			)
+		);
+		wp_set_current_user( $this->make_host() );
+
+		$this->assertSame( 404, $this->review( $id, 'triage_accept' )['die'] );
+		$this->assertSame( 'normal', Services::bookings()->find( $id )['priority'] );
+		$this->assertSame( 1, $this->row_count( 'triage', "status = 'pending' AND source = 'fallback'" ) );
 	}
 
 	public function test_real_fluentcrm_contact_gets_a_stage_tag(): void {

@@ -120,6 +120,24 @@ class SignedCallbackTest extends TestCase {
 		);
 	}
 
+	public function test_reminder_and_followup_routes_run_when_signed(): void {
+		$payload = (string) wp_json_encode( array( 'hours_ahead' => 48 ) );
+
+		$response = $this->send( '/n8n/reminders', $this->headers( 'n8n', $payload ), $payload );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'due'     => 0,
+				'sent'    => 0,
+				'skipped' => 0,
+			),
+			$response->get_data()
+		);
+		$payload = (string) wp_json_encode( array( 'hours_after' => 0 ) );
+		$this->assertSame( 200, $this->send( '/n8n/followups', $this->headers( 'n8n', $payload ), $payload )->get_status() );
+	}
+
 	public function test_a_short_secret_fails_closed(): void {
 		$this->env( 'QHS_HMAC_SECRET_N8N', 'short' );
 		$payload = $this->payload();
@@ -139,7 +157,7 @@ class SignedCallbackTest extends TestCase {
 	public function test_dispatch_decision_assigns_staff(): void {
 		$staff = $this->user( 'qhs_staff' );
 		update_user_meta( $staff, 'qhs_staff_ref', 'rowan' );
-		$id      = $this->confirmed();
+		$id      = $this->paid_stay( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ) );
 		$booking = Services::bookings()->find( $id );
 		$payload = (string) wp_json_encode(
 			array(
@@ -154,14 +172,30 @@ class SignedCallbackTest extends TestCase {
 		$response = $this->send( '/dispatch/decision', $this->headers( 'dispatch', $payload ), $payload );
 
 		$this->assertSame( 'assigned', $response->get_data()['result'] );
-		$this->assertSame( 'assigned', $this->state( $id ) );
+		$this->assertSame( 'confirmed', $this->state( $id ) );
 		$this->assertSame( $staff, (int) Services::bookings()->find( $id )['staff_user_id'] );
+		$this->assertSame( 1, $this->row_count( 'booking_history', "booking_id = {$id} AND reason LIKE 'team member assigned%'" ) );
+	}
+
+	public function test_dispatch_decisions_for_requests_or_unknown_staff_change_nothing(): void {
+		$staff = $this->user( 'qhs_staff' );
+		update_user_meta( $staff, 'qhs_staff_ref', 'rowan' );
+		$request = $this->paid_stay( $this->stay_listing( array( 'qm_instant_book' => false ) ), $this->day( 10 ), $this->day( 12 ) );
+		$id      = $this->paid_stay( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ), 'b@example.com' );
+		$version = (int) Services::bookings()->find( $id )['version'];
+
+		$this->assertSame( 'stale', Services::service()->apply_dispatch_decision( $request, (int) Services::bookings()->find( $request )['version'], 'assigned', 'rowan', 'x' ) );
+		$this->assertSame( 'unknown_staff', Services::service()->apply_dispatch_decision( $id, $version, 'assigned', 'nobody', 'x' ) );
+		$this->assertSame( 'unassigned', Services::service()->apply_dispatch_decision( $id, $version, 'unassigned', '', 'nobody free' ) );
+		$this->assertSame( 'not_found', Services::service()->apply_dispatch_decision( 999999, 1, 'assigned', 'rowan', 'x' ) );
+		$this->assertSame( 0, (int) Services::bookings()->find( $id )['staff_user_id'] );
+		$this->assertSame( 2, $this->row_count( 'alerts', "source = 'dispatch'" ) );
 	}
 
 	public function test_stale_dispatch_decision_is_ignored(): void {
 		$staff = $this->user( 'qhs_staff' );
 		update_user_meta( $staff, 'qhs_staff_ref', 'rowan' );
-		$id      = $this->confirmed();
+		$id      = $this->paid_stay( $this->stay_listing(), $this->day( 10 ), $this->day( 12 ) );
 		$payload = (string) wp_json_encode(
 			array(
 				'booking_id' => $id,

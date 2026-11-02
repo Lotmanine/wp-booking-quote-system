@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
 
 export const PASSWORD = process.env.QHS_DEMO_PASSWORD || 'quillmoor-demo-2026';
-export const BANNER = 'Demo: fictional company, no real services or payments';
+export const BANNER = 'Demo: fictional places, no real bookings or payments';
 
 export async function login( page, username ) {
 	await page.goto( '/wp-login.php', { waitUntil: 'load' } );
@@ -18,78 +18,116 @@ export async function login( page, username ) {
 	await page.waitForLoadState( 'domcontentloaded' );
 }
 
-export async function waitForTurnstile( page ) {
-	await page.waitForFunction( () => {
-		const input = document.querySelector( '.qhs-turnstile input[name="cf-turnstile-response"]' );
-		return input && input.value.length > 0;
-	}, null, { timeout: 60000 } );
+/* Each browser project books its own dates, so desktop and phone runs never collide. */
+export function offsetFor( testInfo, base ) {
+	return base + ( testInfo.project.name === 'phone' ? 40 : 0 );
 }
 
-/* Search from the home page: each field opens a panel and moves on to the next one. */
-export async function searchFromHome( page, { category = 'cleaning', area = 'north', size = 'small' } = {} ) {
-	await page.goto( '/' );
+const iso = ( date ) => date.toISOString().slice( 0, 10 );
+const addDays = ( day, n ) => iso( new Date( new Date( day + 'T00:00:00Z' ).getTime() + n * 86400000 ) );
+
+/* First free run of nights at or after an offset, read from the same calendar the card uses. */
+export async function freeStay( page, listingId, offset, nights ) {
+	return page.evaluate(
+		async ( { id, start, n } ) => {
+			const add = ( d, k ) => new Date( new Date( d + 'T00:00:00Z' ).getTime() + k * 86400000 ).toISOString().slice( 0, 10 );
+			const today = new Date().toISOString().slice( 0, 10 );
+			const response = await fetch( `${ window.qhs.config.rest }listings/${ id }/calendar?from=${ today }&to=${ add( today, 260 ) }` );
+			const data = await response.json();
+			for ( let i = start; i < start + 150; i++ ) {
+				const from = add( new Date().toISOString().slice( 0, 10 ), i );
+				let ok = true;
+				for ( let k = 0; k < n; k++ ) {
+					if ( data.unavailable[ add( from, k ) ] ) {
+						ok = false;
+					}
+				}
+				if ( ok ) {
+					return { from, to: add( from, n ) };
+				}
+			}
+			return null;
+		},
+		{ id: listingId, start: offset, n: nights }
+	);
+}
+
+/* First day and time with room for the party at or after an offset. */
+export async function freeTable( page, listingId, offset, party ) {
+	return page.evaluate(
+		async ( { id, start, size } ) => {
+			const today = new Date().toISOString().slice( 0, 10 );
+			for ( let i = start; i < start + 30; i++ ) {
+				const day = new Date( new Date( today + 'T00:00:00Z' ).getTime() + i * 86400000 ).toISOString().slice( 0, 10 );
+				const response = await fetch( `${ window.qhs.config.rest }listings/${ id }/slots?date=${ day }&party=${ size }` );
+				const data = await response.json();
+				const open = ( data.slots || [] ).filter( ( s ) => s.fits );
+				if ( open.length ) {
+					return { day, slot: open[ 0 ].slot_start };
+				}
+			}
+			return null;
+		},
+		{ id: listingId, start: offset, size: party }
+	);
+}
+
+export async function listingId( page ) {
+	const data = await page.getByTestId( 'booking-card' ).getAttribute( 'data-qm-book' );
+	return JSON.parse( data ).id;
+}
+
+/* Pick a day in the booking card calendar, moving months forward when needed. */
+export async function pickDay( page, day ) {
+	const card = page.getByTestId( 'booking-card' );
+	const cell = card.locator( `[data-testid="cal-day"][data-date="${ day }"]` );
+	for ( let i = 0; i < 12 && ! ( await cell.count() ); i++ ) {
+		await card.getByRole( 'button', { name: 'Next month' } ).click();
+	}
+	await cell.click();
+}
+
+/* Choose dates for a stay, add an extra, hold, and land on the held panel. */
+export async function holdStay( page, { slug, offset, nights, extra = '' } ) {
+	await page.goto( `/listing/${ slug }/` );
 	await expect( page.getByText( BANNER ) ).toBeVisible();
-	await page.getByTestId( 'search-open-category' ).click();
-	await page.getByTestId( `search-category-${ category }` ).click();
-	await page.getByTestId( `search-area-${ area }` ).click();
-	await page.locator( '#qhs-pop-date' ).getByRole( 'button', { name: 'Any date' } ).click();
-	await page.getByTestId( `search-size-${ size }` ).click();
-	await page.getByTestId( 'search-submit' ).click();
-	await page.waitForURL( /\/services\/\?/ );
-}
-
-/* Pick the nth open slot for the district shown on the card, moving months when needed. */
-export async function pickSlot( page, slotIndex ) {
-	await expect( page.locator( '[data-testid="cal-day"].is-open' ).first() ).toBeVisible();
-	const area = await page.locator( '[data-qhs-reserve] [aria-pressed="true"][data-testid^="reserve-area-"]' ).getAttribute( 'data-testid' );
-	const slot = await page.evaluate( async ( key ) => {
-		const response = await fetch( `${ window.qhs.config.rest }availability?area=${ key }` );
-		const { days } = await response.json();
-		return Object.values( days ).flat();
-	}, area.replace( 'reserve-area-', '' ) ).then( ( slots ) => slots[ slotIndex ] );
-	expect( slot, 'enough open slots' ).toBeTruthy();
-	const day = page.locator( `[data-qhs-reserve] [data-testid="cal-day"][data-date="${ slot.slice( 0, 10 ) }"]` );
-	if ( ! ( await day.count() ) ) {
-		await page.locator( '[data-qhs-reserve]' ).getByRole( 'button', { name: 'Next month' } ).click();
+	await expect( page.getByTestId( 'calendar' ) ).toBeVisible();
+	const id = await listingId( page );
+	const range = await freeStay( page, id, offset, nights );
+	expect( range, 'a free run of nights' ).toBeTruthy();
+	await pickDay( page, range.from );
+	await pickDay( page, range.to );
+	if ( extra ) {
+		await page.getByTestId( `extra-${ extra }` ).check();
 	}
-	await day.click();
-	await page.locator( `[data-testid="slot"][data-slot="${ slot }"]` ).click();
-	return slot;
-}
-
-/* Service page to a held slot: size, district, day, time, extras, details, hold. */
-export async function runBooking( page, { note = '', slotIndex = 0, email = '', fromSearch = false } = {} ) {
-	if ( fromSearch ) {
-		await searchFromHome( page );
-		await page.getByTestId( 'service-card-cleaning' ).getByRole( 'link' ).click();
-		await page.waitForURL( /\/book\/\?service=cleaning/ );
-	} else {
-		await page.goto( '/book/?service=cleaning' );
-		await page.getByTestId( 'reserve-area-north' ).click();
-	}
-	await expect( page.getByText( BANNER ) ).toBeVisible();
-	await expect( page.getByTestId( 'reserve-size-small' ) ).toHaveAttribute( 'aria-pressed', 'true' );
-	await expect( page.getByTestId( 'reserve-area-north' ) ).toHaveAttribute( 'aria-pressed', 'true' );
-
-	await pickSlot( page, slotIndex );
-	await page.getByTestId( 'extra-supplies' ).check();
-	await expect( page.getByTestId( 'estimate-total' ) ).toHaveText( '$135.00' );
-	await expect( page.getByTestId( 'estimate-deposit' ) ).toHaveText( '$27.00' );
-	await page.getByTestId( 'reserve-continue' ).click();
-
-	if ( email ) {
-		await page.getByTestId( 'field-full_name' ).fill( 'Playwright Visitor' );
-		await page.getByTestId( 'field-email' ).fill( email );
-	}
-	if ( note ) {
-		await page.getByTestId( 'field-note' ).fill( note );
-	}
-	await waitForTurnstile( page );
+	await expect( page.getByTestId( 'price-total' ) ).toBeVisible();
+	const total = await page.getByTestId( 'price-total' ).textContent();
+	const deposit = await page.getByTestId( 'price-deposit' ).textContent();
+	await page.getByTestId( 'reserve' ).click();
 	await page.getByTestId( 'hold-submit' ).click();
-
-	await expect( page.getByTestId( 'quote-total' ) ).toHaveText( '$135.00' );
-	await expect( page.getByTestId( 'quote-deposit' ) ).toHaveText( '$27.00' );
+	await expect( page.getByTestId( 'held' ) ).toBeVisible();
+	await expect( page.getByTestId( 'quote-total' ) ).toHaveText( total );
+	await expect( page.getByTestId( 'quote-deposit' ) ).toHaveText( deposit );
 	await expect( page.getByTestId( 'hold-countdown' ) ).toHaveText( /^(9|10):\d\d$/ );
+	return { range, total, deposit };
+}
+
+/* Choose a day, party and time for a table, hold, and land on the held panel. */
+export async function holdTable( page, { slug, offset, party } ) {
+	await page.goto( `/listing/${ slug }/` );
+	await expect( page.getByTestId( 'calendar' ) ).toBeVisible();
+	const id = await listingId( page );
+	await page.getByTestId( 'book-guests' ).selectOption( String( party ) );
+	const free = await freeTable( page, id, offset, party );
+	expect( free, 'a free table' ).toBeTruthy();
+	await pickDay( page, free.day );
+	await page.locator( `[data-testid="slot"][data-slot="${ free.slot }"]` ).click();
+	await expect( page.getByTestId( 'price-total' ) ).toBeVisible();
+	await page.getByTestId( 'reserve' ).click();
+	await page.getByTestId( 'hold-submit' ).click();
+	await expect( page.getByTestId( 'held' ) ).toBeVisible();
+	await expect( page.getByTestId( 'hold-countdown' ) ).toHaveText( /^(9|10):\d\d$/ );
+	return free;
 }
 
 export async function payDeposit( page ) {
@@ -116,10 +154,18 @@ export async function payDeposit( page ) {
 	}
 	await expect( page.getByText( 'Fake test gateway (not Stripe, no money moves)' ).first() ).toBeVisible();
 	await page.locator( '.wc-block-components-checkout-place-order-button' ).click();
-	await page.waitForURL( /\/portal\/.*paid=1/, { timeout: 60000 } );
-	await expect( page.getByTestId( 'portal-notice' ) ).toContainText( 'test deposit was received' );
+	await page.waitForURL( /\/trips\/.*paid=1/, { timeout: 60000 } );
+	await expect( page.getByTestId( 'trips-notice' ) ).toContainText( 'test deposit was received' );
+	return new URL( page.url() ).searchParams.get( 'booking' );
 }
 
-export function bookingIdFrom( url ) {
-	return new URL( url ).searchParams.get( 'booking' );
+/* No sideways scroll: the page cannot be scrolled horizontally. */
+export async function expectNoSideScroll( page ) {
+	const x = await page.evaluate( () => {
+		window.scrollTo( 400, window.scrollY );
+		const moved = window.scrollX;
+		window.scrollTo( 0, window.scrollY );
+		return moved;
+	} );
+	expect( x, 'horizontal scroll' ).toBe( 0 );
 }
