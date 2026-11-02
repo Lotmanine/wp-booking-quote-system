@@ -23,24 +23,68 @@ final class Catalog {
 	 */
 	public static function all(): array {
 		$catalog = array(
-			'services' => array(
-				'cleaning'  => array(
+			'categories' => array(
+				'cleaning' => array( 'label' => 'Cleaning' ),
+				'repairs'  => array( 'label' => 'Repairs and fitting' ),
+				'garden'   => array( 'label' => 'Garden' ),
+			),
+			'services'   => array(
+				'cleaning'   => array(
 					'label'      => 'Home cleaning',
 					'base_cents' => 12000,
 					'skill'      => 'cleaning',
+					'category'   => 'cleaning',
+					'hours'      => '2 to 4 hours',
+					'summary'    => 'Kitchens, bathrooms and living spaces, room by room, with a checklist you can see.',
+					'includes'   => array( 'Dusting and wiping of every reachable surface', 'Kitchen counters, hob and sink', 'Bathrooms, toilets and mirrors', 'Vacuum and mop of all floors' ),
 				),
-				'handyman'  => array(
+				'deep-clean' => array(
+					'label'      => 'Deep clean',
+					'base_cents' => 18000,
+					'skill'      => 'cleaning',
+					'category'   => 'cleaning',
+					'hours'      => '4 to 6 hours',
+					'summary'    => 'The once-a-season reset: inside cupboards, behind appliances and every skirting board.',
+					'includes'   => array( 'Everything in a home clean', 'Inside cupboards and drawers', 'Behind and under movable appliances', 'Skirting boards, doors and switches' ),
+				),
+				'handyman'   => array(
 					'label'      => 'Handyman visit',
 					'base_cents' => 9000,
 					'skill'      => 'handyman',
+					'category'   => 'repairs',
+					'hours'      => '1 to 3 hours',
+					'summary'    => 'Small repairs, shelves, doors and the jobs that wait too long.',
+					'includes'   => array( 'A list of small jobs in one visit', 'Basic fixings and fillers', 'Tidy up after the work', 'Advice on anything that needs a specialist' ),
 				),
-				'gardening' => array(
+				'assembly'   => array(
+					'label'      => 'Furniture assembly',
+					'base_cents' => 7500,
+					'skill'      => 'handyman',
+					'category'   => 'repairs',
+					'hours'      => '1 to 3 hours',
+					'summary'    => 'Flat-pack wardrobes, desks and beds, built square and fixed to the wall where needed.',
+					'includes'   => array( 'Assembly from the maker instructions', 'Wall anchoring for tall units', 'Packaging flattened and stacked', 'A final level and door check' ),
+				),
+				'gardening'  => array(
 					'label'      => 'Garden tidy',
 					'base_cents' => 8000,
 					'skill'      => 'garden',
+					'category'   => 'garden',
+					'hours'      => '2 to 4 hours',
+					'summary'    => 'Hedges, borders and a clear path to the back gate.',
+					'includes'   => array( 'Weeding of beds and borders', 'Light pruning of shrubs', 'Paths and patio swept', 'Green waste bagged on site' ),
+				),
+				'lawn'       => array(
+					'label'      => 'Lawn and hedge care',
+					'base_cents' => 6500,
+					'skill'      => 'garden',
+					'category'   => 'garden',
+					'hours'      => '1 to 2 hours',
+					'summary'    => 'A sharp lawn edge and straight hedges, cut to the height you choose.',
+					'includes'   => array( 'Lawn mowed and edged', 'Hedges trimmed to shape', 'Clippings collected', 'Mower and trimmer brought by the team' ),
 				),
 			),
-			'sizes'    => array(
+			'sizes'      => array(
 				'small'  => array(
 					'label'      => 'Small (up to 2 rooms)',
 					'multiplier' => 100,
@@ -54,7 +98,7 @@ final class Catalog {
 					'multiplier' => 190,
 				),
 			),
-			'areas'    => array(
+			'areas'      => array(
 				'north'     => array(
 					'label'           => 'North district',
 					'surcharge_cents' => 0,
@@ -71,7 +115,7 @@ final class Catalog {
 					'capacity'        => 1,
 				),
 			),
-			'extras'   => array(
+			'extras'     => array(
 				'supplies' => array(
 					'label' => 'We bring supplies',
 					'cents' => 1500,
@@ -194,6 +238,27 @@ final class Catalog {
 	public static function label( string $group, string $key ): string {
 		$catalog = self::all();
 		return (string) ( $catalog[ $group ][ $key ]['label'] ?? $key );
+	}
+
+	/**
+	 * Illustration for a service. Every image is an original SVG shipped with the plugin.
+	 *
+	 * @param string $service Service key.
+	 */
+	public static function image_url( string $service ): string {
+		$catalog = self::all();
+		$key     = isset( $catalog['services'][ $service ] ) ? $service : 'cleaning';
+		return QUILLMOOR_PLUGIN_URL . 'assets/img/' . $key . '.svg';
+	}
+
+	/**
+	 * Category of a service.
+	 *
+	 * @param string $service Service key.
+	 */
+	public static function category( string $service ): string {
+		$catalog = self::all();
+		return (string) ( $catalog['services'][ $service ]['category'] ?? '' );
 	}
 
 	/**

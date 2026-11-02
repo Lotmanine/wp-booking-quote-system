@@ -77,15 +77,20 @@ final class Setup {
 	}
 
 	/**
-	 * Create pages from the theme's block markup.
+	 * Create pages from the theme's block markup. App pages use the template without a title.
 	 */
 	private static function pages(): void {
-		$pages = array(
-			'home'   => array( 'Quillmoor Home Services', '<!-- wp:pattern {"slug":"quillmoor/home"} /-->' ),
-			'quote'  => array( 'Get a quote', '<!-- wp:quillmoor/wizard /-->' ),
-			'portal' => array( 'Your bookings', '<!-- wp:quillmoor/portal /-->' ),
-			'staff'  => array( 'Staff portal', '<!-- wp:quillmoor/staff /-->' ),
-			'demo'   => array( 'Try the demo', '<!-- wp:pattern {"slug":"quillmoor/demo"} /-->' ),
+		$services = '<!-- wp:group {"className":"qhs-container qm-browse","layout":{"type":"default"}} --><div class="wp-block-group qhs-container qm-browse">'
+			. '<!-- wp:paragraph {"className":"qm-eyebrow"} --><p class="qm-eyebrow">Book a service</p><!-- /wp:paragraph -->'
+			. '<!-- wp:heading {"level":1,"className":"qm-browse__title"} --><h1 class="wp-block-heading qm-browse__title">Find the right visit</h1><!-- /wp:heading -->'
+			. '<!-- wp:quillmoor/services /--></div><!-- /wp:group -->';
+		$pages    = array(
+			'home'     => array( 'Quillmoor Home Services', '<!-- wp:pattern {"slug":"quillmoor/home"} /-->', '' ),
+			'services' => array( 'Services', $services, 'page-app' ),
+			'book'     => array( 'Book a service', '<!-- wp:quillmoor/service /-->', 'page-app' ),
+			'portal'   => array( 'Your bookings', '<!-- wp:quillmoor/portal /-->', 'page-app' ),
+			'staff'    => array( 'Staff agenda', '<!-- wp:quillmoor/staff /-->', 'page-app' ),
+			'demo'     => array( 'Try the demo', '<!-- wp:pattern {"slug":"quillmoor/demo"} /-->', '' ),
 		);
 		foreach ( $pages as $slug => $page ) {
 			$found = get_page_by_path( $slug );
@@ -99,10 +104,29 @@ final class Setup {
 					'post_content' => $page[1],
 				)
 			);
+			if ( $id > 0 ) {
+				update_post_meta( $id, '_wp_page_template', '' !== $page[2] ? $page[2] : 'default' );
+			}
 			if ( 'home' === $slug ) {
 				update_option( 'show_on_front', 'page' );
 				update_option( 'page_on_front', $id );
 			}
+		}
+
+		// The step-by-step wizard page was replaced by the service page. Old links redirect to /services/.
+		$old = get_page_by_path( 'quote' );
+		if ( $old ) {
+			wp_delete_post( $old->ID, true );
+		}
+
+		$checkout = function_exists( 'wc_get_page_id' ) ? (int) wc_get_page_id( 'checkout' ) : 0;
+		if ( $checkout > 0 ) {
+			wp_update_post(
+				array(
+					'ID'         => $checkout,
+					'post_title' => 'Confirm and pay your deposit',
+				)
+			);
 		}
 	}
 }

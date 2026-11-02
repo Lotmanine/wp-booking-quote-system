@@ -202,6 +202,70 @@ final class BookingRepository {
 	}
 
 	/**
+	 * Admin list: newest first, filtered by state and a search on reference, email or name.
+	 *
+	 * @param string $state  State value, or an empty string for every state.
+	 * @param string $term   Search text.
+	 * @param int    $limit  Page size.
+	 * @param int    $offset Rows to skip.
+	 * @return array{rows: array<int,array<string,mixed>>, total: int}
+	 */
+	public function search( string $state, string $term, int $limit, int $offset ): array {
+		global $wpdb;
+		$where = array( '1 = 1' );
+		$args  = array( Db::table( 'bookings' ), Db::table( 'customers' ), Db::table( 'quotes' ) );
+		if ( '' !== $state ) {
+			$where[] = 'b.state = %s';
+			$args[]  = $state;
+		}
+		$term = trim( $term );
+		if ( 1 === preg_match( '/^(?:qhs-?)?(\d+)$/i', $term, $match ) ) {
+			$where[] = 'b.id = %d';
+			$args[]  = (int) $match[1];
+		} elseif ( '' !== $term ) {
+			$like    = '%' . $wpdb->esc_like( $term ) . '%';
+			$where[] = '(c.email LIKE %s OR c.full_name LIKE %s)';
+			$args[]  = $like;
+			$args[]  = $like;
+		}
+		$from = 'FROM %i b JOIN %i c ON c.id = b.customer_id LEFT JOIN %i q ON q.id = b.quote_id WHERE ' . implode( ' AND ', $where );
+
+		// The WHERE clause is built from fixed fragments with placeholders, so the sniffs cannot count them.
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) {$from}", $args ) );
+		$rows  = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT b.*, c.full_name, c.email, q.total_cents {$from} ORDER BY b.id DESC LIMIT %d OFFSET %d",
+				array_merge( $args, array( $limit, $offset ) )
+			),
+			ARRAY_A
+		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return array(
+			'rows'  => $rows,
+			'total' => $total,
+		);
+	}
+
+	/**
+	 * Number of bookings per state.
+	 *
+	 * @return array<string,int>
+	 */
+	public function state_counts(): array {
+		global $wpdb;
+		$rows = (array) $wpdb->get_results(
+			$wpdb->prepare( 'SELECT state, COUNT(*) AS total FROM %i GROUP BY state', Db::table( 'bookings' ) ),
+			ARRAY_A
+		);
+		$out  = array();
+		foreach ( $rows as $row ) {
+			$out[ (string) $row['state'] ] = (int) $row['total'];
+		}
+		return $out;
+	}
+
+	/**
 	 * Holds whose time ran out.
 	 *
 	 * @param int $limit Batch size.

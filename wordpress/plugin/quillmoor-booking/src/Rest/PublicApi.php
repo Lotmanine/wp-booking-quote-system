@@ -25,18 +25,29 @@ defined( 'ABSPATH' ) || exit;
 final class PublicApi {
 
 	/**
-	 * Catalog without internal fields.
+	 * Catalog without internal fields such as the dispatch skill.
 	 */
 	public static function catalog(): WP_REST_Response {
 		$catalog = Catalog::all();
 		$out     = array();
 		foreach ( $catalog as $group => $items ) {
 			foreach ( $items as $key => $item ) {
-				$out[ $group ][] = array(
+				$row = array(
 					'key'   => $key,
 					'label' => $item['label'],
 					'cents' => (int) ( $item['base_cents'] ?? $item['cents'] ?? $item['surcharge_cents'] ?? 0 ),
 				);
+				if ( 'services' === $group ) {
+					$row['category'] = (string) ( $item['category'] ?? '' );
+					$row['hours']    = (string) ( $item['hours'] ?? '' );
+					$row['summary']  = (string) ( $item['summary'] ?? '' );
+					$row['includes'] = array_values( array_map( 'strval', (array) ( $item['includes'] ?? array() ) ) );
+					$row['image']    = Catalog::image_url( (string) $key );
+				}
+				if ( 'sizes' === $group ) {
+					$row['multiplier'] = (int) $item['multiplier'];
+				}
+				$out[ $group ][] = $row;
 			}
 		}
 		return new WP_REST_Response( $out );

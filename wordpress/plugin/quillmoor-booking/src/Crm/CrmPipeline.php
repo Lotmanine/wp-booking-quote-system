@@ -7,6 +7,7 @@
 
 namespace Quillmoor\Booking\Crm;
 
+use Quillmoor\Booking\Catalog;
 use Quillmoor\Booking\Config;
 use Quillmoor\Booking\Domain\BookingRepository;
 
@@ -51,7 +52,9 @@ final class CrmPipeline {
 			array_unique(
 				array_merge(
 					array_values( self::STAGES ),
-					array( self::CONSENT_TAG, self::DEMO_TAG, 'service-cleaning', 'service-handyman', 'service-gardening', 'area-north', 'area-central', 'area-riverside' )
+					array( self::CONSENT_TAG, self::DEMO_TAG ),
+					array_map( static fn( $key ) => 'service-' . $key, array_keys( Catalog::all()['services'] ) ),
+					array_map( static fn( $key ) => 'area-' . $key, array_keys( Catalog::all()['areas'] ) )
 				)
 			)
 		);

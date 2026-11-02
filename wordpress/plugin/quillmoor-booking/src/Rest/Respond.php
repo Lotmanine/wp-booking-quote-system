@@ -112,6 +112,8 @@ final class Respond {
 			'state'           => $state->value,
 			'state_label'     => $state->label(),
 			'service'         => Catalog::label( 'services', (string) $booking['service'] ),
+			'service_key'     => (string) $booking['service'],
+			'image'           => Catalog::image_url( (string) $booking['service'] ),
 			'area'            => Catalog::label( 'areas', (string) $booking['area'] ),
 			'area_key'        => (string) $booking['area'],
 			'slot_start'      => $slot,
