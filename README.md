@@ -234,6 +234,16 @@ cannot change their password or email. Data resets every night at 03:00 UTC.
 
 See [DEPLOY.md](DEPLOY.md).
 
+## Author
+
+Built by **Lotfi Otmanine**, senior WordPress developer at [OLDEV](https://oldev.site).
+
+- Website: [oldev.site](https://oldev.site)
+- Hire me on Upwork: [upwork.com/freelancers/~01bd748fcb665b90ca](https://www.upwork.com/freelancers/~01bd748fcb665b90ca)
+- LinkedIn: [linkedin.com/in/lotfi-otmanine](https://www.linkedin.com/in/lotfi-otmanine)
+- GitHub: [github.com/Lotmanine](https://github.com/Lotmanine)
+- Case study: [oldev.site/work/25-booking-and-quote-system](https://oldev.site/work/25-booking-and-quote-system/)
+
 ## Credits
 
 - Photos: 56 photos from Unsplash, used under the Unsplash License, each credited with its
