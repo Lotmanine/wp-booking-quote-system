@@ -1,0 +1,92 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  standards:
+    name: PHPCS (plugin and theme) and PHPStan (plugin)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: wordpress/plugin/quillmoor-booking
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:2.11.1
+      - name: Install Composer packages
+        run: composer install --no-interaction --no-progress --prefer-dist --ignore-platform-reqs
+      - name: PHPCS (WordPress-Core and WordPress-Extra, plugin and theme)
+        run: vendor/bin/phpcs
+      - name: PHPStan level 6 (plugin)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  wordpress-tests:
+    name: WordPress PHPUnit (WooCommerce, FluentCRM, Secure Custom Fields, MariaDB)
+    runs-on: ubuntu-24.04
+    services:
+      db:
+        image: mariadb:11.8.9
+        env:
+          MARIADB_ROOT_PASSWORD: ci-only
+          MARIADB_DATABASE: wp_tests
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:2.11.1
+      - name: Install Composer packages
+        working-directory: wordpress/plugin/quillmoor-booking
+        run: composer install --no-interaction --no-progress --prefer-dist --ignore-platform-reqs
+      - name: Build the WordPress image (pinned core, plugins and theme)
+        run: docker build -f docker/wordpress/Dockerfile -t quillmoor-wp:ci .
+      - name: Run the integration suite
+        run: |
+          docker run --rm --network host --entrypoint bash \
+            -e WP_TESTS_DB_NAME=wp_tests \
+            -e WP_TESTS_DB_USER=root \
+            -e WP_TESTS_DB_PASSWORD=ci-only \
+            -e WP_TESTS_DB_HOST=127.0.0.1 \
+            -v "$PWD/wordpress/plugin/quillmoor-booking:/usr/src/wordpress/wp-content/plugins/quillmoor-booking" \
+            -w /usr/src/wordpress/wp-content/plugins/quillmoor-booking \
+            quillmoor-wp:ci -c 'php vendor/bin/phpunit'
+
+  dispatch-tests:
+    name: Laravel PHPUnit (dispatch)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: dispatch
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:2.11.1
+      - name: Install Composer packages
+        run: composer install --no-interaction --no-progress --prefer-dist --ignore-platform-reqs --no-scripts
+      - name: PHPUnit
+        run: vendor/bin/phpunit
