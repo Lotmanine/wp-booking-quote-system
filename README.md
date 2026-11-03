@@ -1,5 +1,12 @@
 # Booking System for Stays and Tables
 
+[![PHPCS | PHPStan level 6 | WordPress PHPUnit | Laravel PHPUnit](https://img.shields.io/github/actions/workflow/status/Lotmanine/wp-booking-quote-system/checks.yml?branch=main&label=PHPCS%20%7C%20PHPStan%20level%206%20%7C%20WordPress%20PHPUnit%20%7C%20Laravel%20PHPUnit)](https://github.com/Lotmanine/wp-booking-quote-system/actions/workflows/checks.yml)
+
+GitHub Actions runs PHPCS on the plugin and theme, PHPStan level 6 on the plugin, the WordPress
+PHPUnit suite against MariaDB and the Laravel PHPUnit suite on every push to main and every pull
+request. Playwright, the parallel
+hold script and the mutation check need the full stack and are run locally.
+
 A working booking system for places to stay and places to eat, built on WordPress and WooCommerce,
 with a host and admin back office, a Laravel dispatch service and n8n automation. A guest searches by
 where, when and who, opens a listing, picks nights or a table time on the booking card, holds it for
