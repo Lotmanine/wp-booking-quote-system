@@ -105,6 +105,8 @@ img, svg { max-width: 100%; }
 .qm-footer a:hover { text-decoration: underline; }
 .qm-footer__base { padding-block: 18px 28px; border-top: 1px solid var(--line); color: var(--muted); }
 .qm-footer__base p { margin: 0; max-width: 90ch; }
+.qm-footer__base .qm-footer__credit { margin-top: 8px; }
+.qm-footer__credit a { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 /* WooCommerce checkout, kept plain */
 .woocommerce-checkout .wp-block-post-title, .woocommerce-checkout h1 { letter-spacing: -.02em; }

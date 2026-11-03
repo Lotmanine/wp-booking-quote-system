@@ -35,5 +35,6 @@ defined( 'ABSPATH' ) || exit;
 	</div>
 	<div class="qm-container qm-footer__base">
 		<p><?php echo esc_html( sprintf( /* translators: %s: year */ __( 'Quillmoor is a fictional brand made for a portfolio demo, %s. The places, hosts and prices are invented, nothing can really be booked, and no money moves.', 'quillmoor' ), gmdate( 'Y' ) ) ); ?></p>
+		<p class="qm-footer__credit"><a href="https://oldev.site/work/25-booking-and-quote-system/"><?php esc_html_e( 'Demo built by Lotfi Otmanine (OLDEV)', 'quillmoor' ); ?></a></p>
 	</div>
 </footer>
