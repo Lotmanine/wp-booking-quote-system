@@ -89,4 +89,7 @@ jobs:
       - name: Install Composer packages
         run: composer install --no-interaction --no-progress --prefer-dist --ignore-platform-reqs --no-scripts
       - name: PHPUnit
-        run: vendor/bin/phpunit
+        # phpunit.xml lists a Unit suite whose folder is empty, and Git does not keep empty folders.
+        run: |
+          mkdir -p tests/Unit
+          vendor/bin/phpunit
