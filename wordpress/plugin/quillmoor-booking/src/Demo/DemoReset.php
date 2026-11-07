@@ -7,6 +7,7 @@
 
 namespace Quillmoor\Booking\Demo;
 
+use Quillmoor\Booking\Accounts\GuestAccounts;
 use Quillmoor\Booking\Alerts;
 use Quillmoor\Booking\Config;
 use Quillmoor\Booking\Db;
@@ -83,6 +84,8 @@ final class DemoReset {
 
 		self::delete_orders();
 		self::delete_crm_contacts();
+		// Accounts made for paying guests go with their bookings.
+		GuestAccounts::delete_all();
 		foreach ( self::TABLES as $table ) {
 			$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', Db::table( $table ) ) );
 		}

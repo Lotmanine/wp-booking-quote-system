@@ -3,6 +3,7 @@
 
 A green suite proves little unless the tests fail when the code is wrong.
 Run from the repository root with the local stack up: python scripts/mutation-check.py
+Before a commit, python scripts/mutation-check.py --check-originals confirms no mutation was left behind.
 """
 import subprocess
 import sys
@@ -30,7 +31,7 @@ MUTATIONS = [
     ('email cap off', 'Security/Counters.php',
      "return $rows > 0;", "return true;", 'MailTest'),
     ('unverified addresses get mail', 'Mail/MailService.php',
-     "if ( 'verify' !== $kind && empty( $customer['email_verified_at'] ) ) {", "if ( false ) {", 'MailTest'),
+     "if ( ! in_array( $kind, self::OPEN_KINDS, true ) && empty( $customer['email_verified_at'] ) ) {", "if ( false ) {", 'MailTest'),
     ('turnstile result ignored', 'Security/Turnstile.php',
      "return is_array( $body ) && true === ( $body['success'] ?? false );", "return true;", 'AbuseTest'),
     ('reset runs anywhere', 'Demo/DemoReset.php',
@@ -41,6 +42,10 @@ MUTATIONS = [
      "$wpdb->insert(\n\t\t\tDb::table( 'triage' ),", "Services::bookings()->update( (int) $booking['id'], array( 'priority' => $priority ) );\n\t\t$wpdb->insert(\n\t\t\tDb::table( 'triage' ),", 'CrmAndTriageTest'),
     ('wp_mail left open', 'Plugin.php',
      "add_filter( 'pre_wp_mail', '__return_false' );", "", 'MailTest'),
+    ('account created before payment', 'Accounts/GuestAccounts.php',
+     "if ( BookingState::DepositPaid !== $to ) {", "if ( false ) {", 'GuestAccountTest'),
+    ('account cap ignored', 'Accounts/GuestAccounts.php',
+     "if ( ! $this->counters->take( self::CAP_KEY, DAY_IN_SECONDS, Config::accounts_daily_cap() ) ) {", "if ( false ) {", 'GuestAccountTest'),
     ('stale dispatch accepted', 'Domain/BookingService.php',
      "if ( (int) $booking['version'] !== $version || BookingState::Confirmed->value !== $booking['state'] ) {", "if ( BookingState::Confirmed->value !== $booking['state'] ) {", 'SignedCallbackTest'),
 ]
@@ -50,6 +55,14 @@ def run(test_filter):
     result = subprocess.run(['sh', 'scripts/test-wp.sh', '--filter', test_filter], capture_output=True, text=True)
     return result.returncode, result.stdout + result.stderr
 
+
+if '--check-originals' in sys.argv:
+    # Confirms every guarded line is present as written, so no mutation was left in the tree.
+    absent = [name for name, rel, old, new, test_filter in MUTATIONS if old not in (SRC / rel).read_text('utf8')]
+    for name in absent:
+        print(f'MISSING   {name}')
+    print(f'{len(MUTATIONS) - len(absent)} of {len(MUTATIONS)} original lines present')
+    sys.exit(1 if absent else 0)
 
 missed = 0
 for name, rel, old, new, test_filter in MUTATIONS:

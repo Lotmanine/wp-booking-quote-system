@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { BANNER, expectNoSideScroll, holdStay, holdTable, login, offsetFor, payDeposit } from './helpers.js';
+import { sql, wp } from '../global-setup.js';
+import { BANNER, expectNoSideScroll, freeStay, holdStay, holdTable, listingId, login, offsetFor, payDeposit, pickDay } from './helpers.js';
 
 const SHOTS = process.env.SCREENSHOTS ? '../../docs/screenshots' : null;
 
@@ -163,6 +164,59 @@ test( 'stay: hold, pay, instant confirmation, change dates, cancel and refund', 
 		await context.close();
 		await page.reload();
 		await expect( page.getByTestId( 'trip-refund' ) ).toContainText( 'Deposit refunded' );
+	} );
+} );
+
+test( 'guest without an account: Turnstile, hold, pay, and an account only after payment', async ( { page }, testInfo ) => {
+	const email = `guest-${ testInfo.project.name }-${ Date.now() }@example.com`;
+	const accounts = () => sql( `SELECT COUNT(*) FROM qwp_users WHERE user_email = '${ email }'` );
+
+	await test.step( 'a visitor who is not signed in picks nights and sees the security check', async () => {
+		await page.goto( '/listing/sunlit-brick-loft/' );
+		await expect( page.getByText( BANNER ) ).toBeVisible();
+		await expect( page.getByTestId( 'calendar' ) ).toBeVisible();
+		const id = await listingId( page );
+		const range = await freeStay( page, id, offsetFor( testInfo, 70 ), 2 );
+		expect( range, 'a free run of nights' ).toBeTruthy();
+		await pickDay( page, range.from );
+		await pickDay( page, range.to );
+		await expect( page.getByTestId( 'price-total' ) ).toBeVisible();
+		await page.getByTestId( 'reserve' ).click();
+		// The widget draws its frame inside a closed shadow root, so check its box and its token field.
+		await expect( page.locator( '.qm-turnstile' ) ).toBeVisible();
+		await page.waitForFunction( () => !! document.querySelector( '.qm-turnstile input[name="cf-turnstile-response"]' )?.value, null, { timeout: 30000 } );
+	} );
+
+	await test.step( 'quote and hold both carry the Turnstile token, and no account exists yet', async () => {
+		await page.getByTestId( 'field-full_name' ).fill( 'Robin Guest' );
+		await page.getByTestId( 'field-email' ).fill( email );
+		const quote = page.waitForRequest( ( r ) => r.url().includes( '/qhs/v1/quote' ) && r.method() === 'POST' );
+		const hold = page.waitForRequest( ( r ) => r.url().includes( '/qhs/v1/hold' ) && r.method() === 'POST' );
+		await page.getByTestId( 'hold-submit' ).click();
+		expect( ( await quote ).postDataJSON().turnstile_token ).toBeTruthy();
+		expect( ( await hold ).postDataJSON().turnstile_token ).toBeTruthy();
+		await expect( page.getByTestId( 'held' ) ).toBeVisible();
+		expect( accounts() ).toBe( '0' );
+	} );
+
+	await test.step( 'the guest pays the deposit and is still not signed in', async () => {
+		const bookingId = await payDeposit( page );
+		expect( bookingId ).toBeTruthy();
+		await expect( page.getByTestId( 'booking-state' ) ).toHaveText( 'Confirmed' );
+		expect( await page.evaluate( () => document.body.classList.contains( 'logged-in' ) ) ).toBe( false );
+		// The token link from the hold keeps working.
+		await page.reload();
+		await expect( page.getByTestId( 'booking-state' ) ).toHaveText( 'Confirmed' );
+		await expectNoSideScroll( page );
+	} );
+
+	await test.step( 'the address now has a guest account, and one set-password email was logged', async () => {
+		expect( accounts() ).toBe( '1' );
+		expect( wp( 'user', 'get', email, '--field=roles' ) ).toBe( 'qhs_customer' );
+		expect( wp( 'user', 'meta', 'get', email, 'qhs_guest_account' ) ).toBe( '1' );
+		expect( wp( 'option', 'get', 'users_can_register' ) ).toBe( '0' );
+		const kinds = sql( `SELECT kind, status FROM qwp_qhs_mail_log WHERE kind LIKE 'account%' AND to_hash = SHA2('${ email }', 256)` );
+		expect( kinds ).toBe( 'account_setup\tsuppressed_reserved' );
 	} );
 } );
 

@@ -45,7 +45,7 @@ class StateMachineTest extends TestCase {
 		$this->assertNull( $booking['hold_expires_at'] );
 		$this->assertSame( array( 'quote>hold', 'hold>deposit_paid', 'deposit_paid>confirmed' ), $this->history( $id ) );
 		$this->assertSame( 2, $this->row_count( 'night_claims', "booking_id = {$id} AND kind = 'booking' AND expires_at IS NULL" ) );
-		$this->assertSame( array( 'confirmation' ), $this->mail_kinds( $id ) );
+		$this->assertSame( array( 'account_setup', 'confirmation' ), $this->mail_kinds( $id ) );
 		foreach ( array( 'booking.quote', 'booking.hold', 'booking.deposit_paid', 'booking.confirmed' ) as $event ) {
 			$this->assertSame( 1, $this->row_count( 'outbox', "booking_id = {$id} AND event = '{$event}'" ), $event );
 		}
@@ -67,7 +67,7 @@ class StateMachineTest extends TestCase {
 		$this->assertSame( 'requested', $booking['state'] );
 		$this->assertNotEmpty( $booking['requested_at'] );
 		$this->assertSame( array( 'quote>hold', 'hold>deposit_paid', 'deposit_paid>requested' ), $this->history( $id ) );
-		$this->assertSame( array( 'request' ), $this->mail_kinds( $id ) );
+		$this->assertSame( array( 'account_setup', 'request' ), $this->mail_kinds( $id ) );
 		$this->assertCount( 2, $this->nights_of( $id ) );
 	}
 
@@ -77,7 +77,7 @@ class StateMachineTest extends TestCase {
 		$confirmed = Services::service()->confirm( $id, 'host' );
 
 		$this->assertSame( 'confirmed', $confirmed['state'] );
-		$this->assertSame( array( 'request', 'confirmation' ), $this->mail_kinds( $id ) );
+		$this->assertSame( array( 'account_setup', 'request', 'confirmation' ), $this->mail_kinds( $id ) );
 		$this->assertSame( 'not_requested', $this->error_of( fn() => Services::service()->confirm( $id, 'host' ) ) );
 	}
 
@@ -90,7 +90,7 @@ class StateMachineTest extends TestCase {
 		$this->assertSame( 'declined', $declined['state'] );
 		$this->assertSame( 'flagged', $declined['refund_status'] );
 		$this->assertSame( array(), $this->nights_of( $id ) );
-		$this->assertSame( array( 'request', 'declined' ), $this->mail_kinds( $id ) );
+		$this->assertSame( array( 'account_setup', 'request', 'declined' ), $this->mail_kinds( $id ) );
 		$this->assertSame( 'not_requested', $this->error_of( fn() => Services::service()->confirm( $id, 'host' ) ) );
 		$this->assertSame( 'hold', $this->state( $this->held_stay( $listing, $this->day( 10 ), $this->day( 12 ), 'next@example.com' ) ) );
 	}

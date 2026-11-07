@@ -1,6 +1,7 @@
 <?php
 namespace Quillmoor\Booking\Tests\Integration;
 
+use Quillmoor\Booking\Accounts\GuestAccounts;
 use Quillmoor\Booking\Demo\Banner;
 use Quillmoor\Booking\Demo\DemoGuard;
 use Quillmoor\Booking\Demo\DemoReset;
@@ -259,6 +260,34 @@ class DemoSafetyTest extends TestCase {
 		$this->assertTrue( wp_check_password( 'test-password', get_user_by( 'login', DemoReset::CUSTOMER_LOGIN )->user_pass ) );
 		$this->assertContains( Roles::MANAGER, get_user_by( 'login', DemoReset::MANAGER_LOGIN )->roles );
 		$this->assertNotNull( Services::bookings()->customer_by_user( $customer->ID ) );
+	}
+
+	public function test_reset_removes_guest_accounts_and_their_data_only(): void {
+		$this->allow_reset();
+		$this->fake_photos();
+		$listing = $this->stay_listing();
+		$this->paid_stay( $listing, $this->day( 10 ), $this->day( 12 ), 'paid-guest@example.com' );
+		$guest = get_user_by( 'email', 'paid-guest@example.com' );
+		$this->assertInstanceOf( \WP_User::class, $guest );
+		$this->assertSame( '1', get_user_meta( $guest->ID, GuestAccounts::META, true ) );
+		// An ordinary account the site did not make for a guest stays, and so does a host.
+		$kept = $this->user( Roles::CUSTOMER );
+		$host = $this->host();
+		// A guest-marked account that gained another role is left for a person to look at.
+		$promoted = $this->user( Roles::HOST );
+		update_user_meta( $promoted, GuestAccounts::META, '1' );
+
+		DemoReset::run();
+
+		$this->assertFalse( get_userdata( $guest->ID ) );
+		$this->assertSame( array(), get_user_meta( $guest->ID ) );
+		$this->assertSame( 0, $this->row_count( 'customers', 'user_id = ' . (int) $guest->ID ) );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $kept ) );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $host ) );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $promoted ) );
+		foreach ( array( DemoReset::CUSTOMER_LOGIN, DemoReset::HOST_LOGIN, DemoReset::MANAGER_LOGIN ) as $login ) {
+			$this->assertInstanceOf( \WP_User::class, get_user_by( 'login', $login ), $login );
+		}
 	}
 
 	public function test_reset_removes_the_old_staff_login(): void {

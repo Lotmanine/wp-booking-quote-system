@@ -25,6 +25,12 @@ final class MailService {
 	private const CAP_KEY = 'mail:daily';
 
 	/**
+	 * Messages an unverified address can get. Each one only helps the address owner prove they own it:
+	 * the verification link, and the account email sent once a deposit is paid.
+	 */
+	private const OPEN_KINDS = array( 'verify', 'account_setup', 'account_signin' );
+
+	/**
 	 * Build the service.
 	 *
 	 * @param MailPort $port     Transport.
@@ -147,6 +153,34 @@ final class MailService {
 	}
 
 	/**
+	 * After a paid guest booking, ask the new account holder to choose a password.
+	 *
+	 * @param array<string,mixed> $customer  Customer row.
+	 * @param array<string,mixed> $booking   Booking row.
+	 * @param string              $reset_url Password link from get_password_reset_key().
+	 */
+	public function send_account_setup( array $customer, array $booking, string $reset_url ): string {
+		$html = '<p>Your deposit was received. We created an account for this address so you can find this booking, and any later ones, in one place.</p>'
+			. '<p><a href="' . esc_url( $reset_url ) . '">Set your password</a></p>'
+			. '<p>The link works once and expires in 24 hours. Nobody can sign in to the account until a password is set, so if you did not make this booking you can ignore this message.</p>'
+			. $this->summary( $booking, 'Your booking:' );
+		return $this->deliver( $customer, 'account_setup', (int) $booking['id'], 'Set your password (demo)', $html );
+	}
+
+	/**
+	 * After a paid guest booking for an address that already has an account, say where to find it.
+	 *
+	 * @param array<string,mixed> $customer Customer row.
+	 * @param array<string,mixed> $booking  Booking row.
+	 */
+	public function send_account_signin( array $customer, array $booking ): string {
+		$html = '<p>Your deposit was received. This booking is now in the account that uses this address.</p>'
+			. '<p><a href="' . esc_url( wp_login_url( home_url( '/trips/' ) ) ) . '">Sign in to see your booking</a></p>'
+			. $this->summary( $booking, 'Your booking:' );
+		return $this->deliver( $customer, 'account_signin', (int) $booking['id'], 'Sign in to see your booking (demo)', $html );
+	}
+
+	/**
 	 * Booking summary block for a message.
 	 *
 	 * @param array<string,mixed> $booking Booking row.
@@ -193,7 +227,7 @@ final class MailService {
 		if ( self::is_reserved( $email ) ) {
 			return $this->log( $email, $kind, $booking_id, $subject, 'suppressed_reserved' );
 		}
-		if ( 'verify' !== $kind && empty( $customer['email_verified_at'] ) ) {
+		if ( ! in_array( $kind, self::OPEN_KINDS, true ) && empty( $customer['email_verified_at'] ) ) {
 			return $this->log( $email, $kind, $booking_id, $subject, 'blocked_unverified' );
 		}
 

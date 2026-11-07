@@ -7,6 +7,7 @@
 
 namespace Quillmoor\Booking;
 
+use Quillmoor\Booking\Accounts\GuestAccounts;
 use Quillmoor\Booking\Admin\Actions;
 use Quillmoor\Booking\Admin\AdminPages;
 use Quillmoor\Booking\Admin\ListingEditor;
@@ -59,6 +60,8 @@ final class Plugin {
 		add_action( self::PURGE_HOOK, array( self::class, 'purge' ) );
 		add_action( self::RESET_HOOK, array( DemoReset::class, 'run_scheduled' ) );
 		add_action( Outbox::HOOK, array( self::class, 'deliver_outbox' ) );
+		// Guest accounts follow payment confirmation, whatever gateway confirmed it.
+		add_action( 'quillmoor_booking_transitioned', array( GuestAccounts::class, 'on_transition' ), 10, 3 );
 		add_action( 'init', array( self::class, 'schedule' ) );
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
