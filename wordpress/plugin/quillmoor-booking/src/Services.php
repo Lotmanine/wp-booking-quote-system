@@ -7,6 +7,7 @@
 
 namespace Quillmoor\Booking;
 
+use Quillmoor\Booking\Accounts\GuestAccounts;
 use Quillmoor\Booking\Crm\CrmPipeline;
 use Quillmoor\Booking\Crm\CrmPort;
 use Quillmoor\Booking\Crm\FluentCrmAdapter;
@@ -21,6 +22,7 @@ use Quillmoor\Booking\Mail\BrevoMailer;
 use Quillmoor\Booking\Mail\LogOnlyMailer;
 use Quillmoor\Booking\Mail\MailPort;
 use Quillmoor\Booking\Mail\MailService;
+use Quillmoor\Booking\Mail\N8nMailer;
 use Quillmoor\Booking\Payment\DepositPort;
 use Quillmoor\Booking\Payment\Refunds;
 use Quillmoor\Booking\Payment\WooDepositPort;
@@ -141,14 +143,23 @@ final class Services {
 	}
 
 	/**
-	 * Mail transport. Log-only until a Brevo key exists.
+	 * Mail transport: Brevo when its key exists, otherwise n8n when its webhook is set, otherwise
+	 * log-only.
 	 */
 	public static function mail_port(): MailPort {
 		return self::once(
 			MailPort::class,
 			static function (): MailPort {
 				$key = Config::get( 'BREVO_API_KEY' );
-				return apply_filters( 'quillmoor_mail_port', '' === $key ? new LogOnlyMailer() : new BrevoMailer( $key ) );
+				$url = Config::n8n_mail_url();
+				if ( '' !== $key ) {
+					$port = new BrevoMailer( $key );
+				} elseif ( '' !== $url ) {
+					$port = new N8nMailer( $url, Config::hmac_secret( 'n8n' ) );
+				} else {
+					$port = new LogOnlyMailer();
+				}
+				return apply_filters( 'quillmoor_mail_port', $port );
 			}
 		);
 	}
@@ -195,6 +206,13 @@ final class Services {
 			BookingService::class,
 			static fn() => new BookingService( self::bookings(), self::machine(), self::nights(), self::tables(), self::availability(), self::outbox(), self::mail() )
 		);
+	}
+
+	/**
+	 * Accounts for guests who paid.
+	 */
+	public static function accounts(): GuestAccounts {
+		return self::once( GuestAccounts::class, static fn() => new GuestAccounts( self::bookings(), self::counters(), self::mail() ) );
 	}
 
 	/**

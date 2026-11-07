@@ -87,4 +87,18 @@ final class Config {
 	public static function mail_per_address(): int {
 		return self::int( 'QHS_MAIL_PER_ADDRESS_DAILY', 5 );
 	}
+
+	/**
+	 * n8n webhook that sends email when no Brevo key is set. Empty means log-only.
+	 */
+	public static function n8n_mail_url(): string {
+		return self::get( 'QHS_N8N_MAIL_URL' );
+	}
+
+	/**
+	 * Accounts created for paying guests per day. Bookings still confirm once it is reached.
+	 */
+	public static function accounts_daily_cap(): int {
+		return self::int( 'QHS_ACCOUNTS_DAILY_CAP', 50 );
+	}
 }
