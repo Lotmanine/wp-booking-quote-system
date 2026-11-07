@@ -50,8 +50,13 @@ Never paste a live Stripe key. The site refuses `sk_live_`, `rk_live_` and `pk_l
 boot and on save, and then closes every booking route until the value is removed.
 
 Without Stripe test keys a hold still works and the deposit step says that payments are not set up
-yet. Without Turnstile keys, only signed-in accounts can reserve. Without a Brevo key, email is
-written to the mail log and nothing is sent.
+yet. Without Turnstile keys, only signed-in accounts can reserve. Without a Brevo key, email goes
+through the n8n workflow in step 4 when `QHS_N8N_MAIL_URL` is set, signed with
+`QHS_HMAC_SECRET_N8N`; with neither, email is written to the mail log and nothing is sent.
+
+Stripe needs nothing else: once the three `STRIPE_TEST_*` values are set and the app redeployed, the
+deposit step offers Stripe, and a paid deposit moves the booking through the same state change the
+local fake gateway uses, which is what creates guest accounts (see Operating it).
 
 Deploy. The first start takes a few minutes: it installs WordPress, activates the plugins (Secure
 Custom Fields among them), seeds the demo accounts and imports the 56 listing photos. An existing
@@ -68,6 +73,20 @@ The five workflows already exist on `n8n.oldev.site`, unpublished:
 | QHS Booking Reminders | `aONh1Sswi5Ude4Ix` |
 | QHS Booking Follow-up | `AoXOmSxBKSj8mGyV` |
 | QHS Booking AI Triage | `BX82JeAPish7AJhS` |
+
+A sixth workflow sends the site's email while there is no Brevo key. It is already published:
+
+| Workflow | ID |
+|---|---|
+| OLDEV- Booking Demo - Email | `WesX4RuPeA2rtEd6` |
+
+It listens on `https://n8n.oldev.site/webhook/booking-mail`, the value of `QHS_N8N_MAIL_URL`. Its
+Crypto node uses the credential **Booking Demo HMAC**, which holds the same value as
+`QHS_HMAC_SECRET_N8N`; if that secret is rotated, update the credential too. The workflow checks the
+signature over the raw body in constant time, a 300 second window and a single-use nonce, caps itself at
+50 messages a day, accepts but never sends to reserved test domains such as example.com, and sends
+through the `SMTP account` credential from `lotfi@oldev.site`. It answers 200 when accepted and 401
+otherwise.
 
 1. In the n8n application on Coolify, add these variables:
 
@@ -97,7 +116,40 @@ The five workflows already exist on `n8n.oldev.site`, unpublished:
    credential.
 6. Publish Events, AI Triage, Reminders and Follow-up, in that order.
 
-## 5. Check it works
+## 5. Wordfence
+
+Wordfence 9.0.2 is part of the image (`WORDFENCE_VERSION` build argument). Every boot activates it and
+applies `docker/wordpress/wordfence-config.php`, so settings changed in wp-admin for those keys are reset
+on the next boot.
+
+- **Firewall in extended protection.** Apache sets `auto_prepend_file` to a loader outside the web root
+  (`docker/wordpress/wordfence-waf.php`), so the firewall runs before WordPress on every PHP request.
+  Learning mode is switched off.
+- **Visitor addresses.** At container start `docker/wordpress/qhs-remoteip.php` rewrites Apache's
+  mod_remoteip list so `X-Forwarded-For` is trusted only from the networks the container is attached to,
+  where the Coolify proxy connects from, instead of every private range. WordPress, Wordfence and the
+  per-IP limits then read `REMOTE_ADDR`. No address is allowlisted in the firewall.
+- **Brute force.** Ten failed logins inside an hour lock an address out for an hour, and `admin`-style
+  usernames are refused. The limits leave room for visitors mistyping the public demo logins.
+- **Rate limits.** 240 requests a minute for people, 120 for crawlers, then throttled.
+- **User enumeration.** `?author=` scans, the REST API user list and oEmbed author data are closed to
+  visitors who are not signed in.
+- **XML-RPC** is denied in Apache: nothing here uses it. **File editing** is off (`DISALLOW_FILE_EDIT`,
+  and `DISALLOW_FILE_MODS`).
+- **Not blocked:** the signed callbacks under `/wp-json/qhs/v1/`, the Stripe webhook at
+  `/?wc-api=wc_stripe` and the WooCommerce checkout. "Block POST requests without a User-Agent" is off
+  because machine callbacks may not send one; they are checked by their signatures instead.
+
+Two steps are left to the site owner in wp-admin, signed in as the `WP_ADMIN_USER` account:
+
+1. **Licence.** Wordfence shows "Wordfence installation is incomplete" until a free licence is
+   registered under Wordfence, Resume Installation. Without it the firewall has no rules file, so attack
+   patterns are not blocked yet. Brute force protection, rate limiting and two-factor login work without
+   it. After registering, run the checks in step 6 again.
+2. **Two-factor login.** Under Wordfence, Login Security, enrol the admin account with an authenticator
+   app and save the recovery codes. It is available to administrators and not forced on any role.
+
+## 6. Check it works
 
 ```sh
 curl -s -o /dev/null -w "%{http_code}\n" https://booking.oldev.site/             # 200
@@ -108,6 +160,12 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Content-Type: application/j
   -d '{}' https://n8n.oldev.site/webhook/qhs-booking-events                      # 401
 curl -s -o /dev/null -w "%{http_code}\n" \
   https://booking.oldev.site/dispatch/api/v1/assignments/1                       # 401 or 405
+curl -s -o /dev/null -w "%{http_code}
+" -X POST https://booking.oldev.site/xmlrpc.php    # 403
+curl -s -o /dev/null -w "%{http_code}
+" https://booking.oldev.site/wp-json/wp/v2/users   # 401
+curl -s -o /dev/null -w "%{http_code}
+" -X POST -H "Content-Type: application/json"   -d '{}' https://n8n.oldev.site/webhook/booking-mail                            # 401
 ```
 
 Then run one test payment:
@@ -164,12 +222,20 @@ lower `MaxRequestWorkers` in `docker/wordpress/apache-limits.conf`. Each worker 
 - **Nightly reset:** runs at 03:00 UTC from Action Scheduler. It needs `QHS_DEMO_SITE=1` and a site
   host equal to `QHS_DEMO_HOST`, and it refuses otherwise. The email counters survive it, so a
   reset cannot refill the daily cap.
-- **Email cap:** 50 per day, enforced before the transport is called. This project and the main
-  site share Brevo's 300 per day.
+- **Email cap:** 50 per day, enforced before the transport is called, and again inside the n8n email
+  workflow. With Brevo, this project and the main site share Brevo's 300 per day.
+- **Guest accounts:** a visitor can reserve and pay without an account. When the deposit is confirmed
+  paid, whatever the gateway, the booking's address gets an account with the guest role and one email
+  with a link to set a password; an address that already has a guest account gets the booking linked
+  and a "Sign in to see your booking" email instead. Nobody is signed in automatically, and the booking
+  link from the hold keeps working. Nothing is created at quote or hold. At most
+  `QHS_ACCOUNTS_DAILY_CAP` (50) accounts are made a day; past that, bookings still confirm without an
+  account and an alert is stored. Self-registration stays closed. A typed address is never attached to
+  a demo login or a host, staff or admin account. The nightly reset deletes these accounts.
 - **Addresses at example.com:** never sent. They are logged as `suppressed_reserved`, because hard
   bounces would hurt the shared sender.
 - **Failed events:** stay in the outbox and retry with backoff, six attempts in all. After that an
   alert appears under Bookings, Reports.
 - **Backups:** the `db_data` volume holds everything worth keeping, and the demo data is disposable.
-- **Removing the project:** delete the Coolify application, unpublish the five workflows, and remove
-  the n8n variables and the `booking` DNS record.
+- **Removing the project:** delete the Coolify application, unpublish the six workflows, delete the
+  Booking Demo HMAC credential, and remove the n8n variables and the `booking` DNS record.

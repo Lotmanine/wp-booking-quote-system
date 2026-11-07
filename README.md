@@ -54,8 +54,14 @@ Built by [Lotfi Otmanine](https://oldev.site).
   administrator.
 - **Guest trips:** upcoming, past and cancelled trips, deposits and refunds, a timeline, date and time
   changes, cancellation under the listing's policy, and PDF quotes and confirmations.
+- **Guest checkout, account after payment:** a visitor reserves and pays the deposit without an
+  account, behind a Turnstile check. Only once the deposit is confirmed paid does the address get a
+  guest account, with one email to set a password, capped per day and removed by the nightly reset.
 - **Automation and CRM:** booking events go to n8n through a signed outbox, FluentCRM stages follow
-  them, and AI suggestions wait for a person.
+  them, and AI suggestions wait for a person. Without a Brevo key, email goes out through an n8n
+  workflow that checks an HMAC signature, a time window and a single-use nonce.
+- **Hardening:** Wordfence with its firewall in extended protection, brute force and rate limits,
+  visitor addresses trusted only from the proxy network, XML-RPC and the public user list closed.
 - **Demo safety:** a banner on every page, restricted demo logins, a nightly reset that restores the
   seed listings and removes visitor uploads, and honest "not set up yet" states while Stripe,
   Turnstile or Brevo keys are missing.
@@ -203,6 +209,8 @@ node tests/concurrency/parallel-hold.mjs
 
 # Breaks each security rule in turn and confirms the suite notices
 python scripts/mutation-check.py
+# Before a commit: confirms every guarded line is back as written
+python scripts/mutation-check.py --check-originals
 
 # Browser tests at desktop and phone width
 cd tests/e2e && npm ci && npx playwright install chromium && npx playwright test
@@ -212,13 +220,13 @@ cd tests/e2e && npm ci && npx playwright install chromium && npx playwright test
 
 | Check | Result |
 |---|---|
-| WordPress PHPUnit | 389 tests, 1492 assertions, passing on PHP 8.5 with WooCommerce, FluentCRM and Secure Custom Fields loaded |
+| WordPress PHPUnit | 415 tests, 1630 assertions, passing on PHP 8.5 with WooCommerce, FluentCRM and Secure Custom Fields loaded |
 | Laravel PHPUnit | 21 tests, 55 assertions, passing |
 | PHPCS (WordPress-Core and WordPress-Extra) | no errors or warnings in the plugin and the theme |
 | PHPStan level 6 | no errors |
-| Playwright | 5 tests at desktop and 5 at phone width, 10 passed, with no sideways scroll on the public pages |
+| Playwright | 6 tests at desktop and 6 at phone width, 12 passed with Wordfence active, including a guest who books and pays without an account, with no sideways scroll on the public pages |
 | Parallel holds | 6 rounds of 10 truly parallel requests: 1 winner for the same nights, 1 winner per night for overlapping ranges, and exactly as many tables as the slot capacity allows |
-| Mutation check | MUTATION_RESULT |
+| Mutation check | 16 of 18 mutations caught, including an account created before payment and the daily account cap ignored. Two survive and also survived before these changes: removing the host id check in `BookingPolicy::is_host` (the listing author check still holds) and dropping the version check on dispatch decisions |
 
 These runs used the labelled fake gateway; the real Stripe test payment has not been run yet because
 no test keys are configured. The concurrency script verifies Turnstile with Cloudflare's published
@@ -264,4 +272,4 @@ Built by **Lotfi Otmanine**, senior WordPress developer at [OLDEV](https://oldev
 ## Versions
 
 WordPress 7.1.4, WooCommerce 11.2.1, WooCommerce Stripe Gateway 11.1.1, FluentCRM 3.3.1, Secure Custom
-Fields 6.9.7, PHP 8.5.12, MariaDB 11.8.9, Laravel 13.39.0, n8n 2.45.7, Leaflet 1.9.4.
+Fields 6.9.7, Wordfence 9.0.2, PHP 8.5.12, MariaDB 11.8.9, Laravel 13.39.0, n8n 2.45.7, Leaflet 1.9.4.
