@@ -179,6 +179,10 @@ final class PublicApi {
 		}
 
 		$booking = (array) Services::bookings()->find( $result['booking_id'] );
+		if ( get_current_user_id() < 1 ) {
+			// A Turnstile token is single use, so the check this quote passed also covers its first hold.
+			set_transient( self::pass_key( (int) $booking['id'] ), 1, 5 * MINUTE_IN_SECONDS );
+		}
 		return new WP_REST_Response(
 			array(
 				'booking' => Respond::booking( $booking ),
@@ -195,7 +199,7 @@ final class PublicApi {
 	 * @param WP_REST_Request $request Request.
 	 */
 	public static function hold( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-		$blocked = Respond::live_key_block() ?? self::guard( $request, 'hold', Config::int( 'QHS_LIMIT_HOLD_PER_MIN', 10 ) );
+		$blocked = Respond::live_key_block() ?? self::guard( $request, 'hold', Config::int( 'QHS_LIMIT_HOLD_PER_MIN', 10 ), false );
 		if ( null !== $blocked ) {
 			return $blocked;
 		}
@@ -203,6 +207,13 @@ final class PublicApi {
 		$booking = Respond::viewable_for_change( $request, (int) $request->get_param( 'booking_id' ) );
 		if ( $booking instanceof WP_Error ) {
 			return $booking;
+		}
+
+		// The first hold within five minutes of a checked quote reuses that check; any other hold by a
+		// visitor who is not signed in needs a fresh token.
+		if ( get_current_user_id() < 1 && ! delete_transient( self::pass_key( (int) $booking['id'] ) )
+			&& ! Services::turnstile()->verify( (string) $request->get_param( 'turnstile_token' ), ClientIp::resolve() ) ) {
+			return Respond::error( 'turnstile_failed', 'Please complete the security check.', 403 );
 		}
 
 		try {
@@ -252,8 +263,9 @@ final class PublicApi {
 	 * @param WP_REST_Request $request Request.
 	 * @param string          $name    Limit name.
 	 * @param int             $limit   Requests per minute.
+	 * @param bool            $check   Whether to verify the Turnstile token here; false when the caller does.
 	 */
-	private static function guard( WP_REST_Request $request, string $name, int $limit ): ?WP_Error {
+	private static function guard( WP_REST_Request $request, string $name, int $limit, bool $check = true ): ?WP_Error {
 		$ip = ClientIp::resolve();
 		if ( ! Services::counters()->take( 'rl:' . $name . ':' . ClientIp::hash( $ip ), MINUTE_IN_SECONDS, $limit ) ) {
 			return Respond::error( 'rate_limited', 'Too many requests. Please wait a minute.', 429 );
@@ -264,10 +276,19 @@ final class PublicApi {
 		if ( ! self::guests_can_reserve() ) {
 			return Respond::error( 'signin_required', 'Sign in to reserve. The security check for guests is not set up yet on this demo.', 403 );
 		}
-		if ( ! Services::turnstile()->verify( (string) $request->get_param( 'turnstile_token' ), $ip ) ) {
+		if ( $check && ! Services::turnstile()->verify( (string) $request->get_param( 'turnstile_token' ), $ip ) ) {
 			return Respond::error( 'turnstile_failed', 'Please complete the security check.', 403 );
 		}
 		return null;
+	}
+
+	/**
+	 * Transient that records a passed Turnstile check for a booking's first hold.
+	 *
+	 * @param int $booking_id Booking id.
+	 */
+	private static function pass_key( int $booking_id ): string {
+		return 'qhs_turnstile_pass_' . $booking_id;
 	}
 
 	/**

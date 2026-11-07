@@ -81,6 +81,53 @@ class AbuseTest extends TestCase {
 		$this->assertSame( array(), $this->nights_of( $id ) );
 	}
 
+	public function test_a_checked_quote_covers_its_first_hold_only(): void {
+		$quote = $this->rest( 'POST', '/quote', $this->quote_body() );
+		$this->assertSame( 201, $quote->get_status() );
+		$id    = (int) $quote->get_data()['booking']['id'];
+		$token = (string) $quote->get_data()['token'];
+		// Turnstile tokens are single use: Cloudflare refuses the quote's token a second time.
+		$this->turnstile_ok = false;
+		$this->http         = array();
+		$body               = array(
+			'booking_id'      => $id,
+			'token'           => $token,
+			'turnstile_token' => 'token',
+		);
+
+		$first = $this->rest( 'POST', '/hold', $body );
+
+		$this->assertSame( 201, $first->get_status() );
+		$this->assertSame( array(), $this->http );
+
+		$this->expire_hold( $id );
+		Services::service()->release_expired_holds();
+		$again = $this->rest( 'POST', '/hold', $body );
+
+		$this->assertSame( 403, $again->get_status() );
+		$this->assertSame( 'turnstile_failed', $this->code( $again ) );
+		$this->assertSame( 'quote', $this->state( $id ) );
+	}
+
+	public function test_a_checked_quote_does_not_cover_another_booking(): void {
+		$this->rest( 'POST', '/quote', $this->quote_body() );
+		$other              = $this->stay_quote( $this->listing, $this->day( 20 ), $this->day( 22 ) );
+		$this->turnstile_ok = false;
+
+		$response = $this->rest(
+			'POST',
+			'/hold',
+			array(
+				'booking_id'      => $other,
+				'token'           => $this->token( $other ),
+				'turnstile_token' => 'token',
+			)
+		);
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( 'quote', $this->state( $other ) );
+	}
+
 	public function test_per_ip_limit_on_quotes(): void {
 		$this->env( 'QHS_LIMIT_QUOTE_PER_MIN', '2' );
 
