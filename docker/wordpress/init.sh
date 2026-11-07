@@ -27,7 +27,8 @@ fi
 
 wp rewrite structure '/%postname%/'
 wp theme activate quillmoor
-wp plugin activate secure-custom-fields woocommerce woocommerce-gateway-stripe fluent-crm quillmoor-booking
+wp plugin activate secure-custom-fields woocommerce woocommerce-gateway-stripe fluent-crm wordfence quillmoor-booking
+wp eval-file /usr/local/share/qhs/wordfence-config.php
 wp qhs setup
 if [ "${QHS_DEMO_SITE:-0}" = "1" ] && ! wp user get demo-customer >/dev/null 2>&1; then
 	wp qhs reset --yes
